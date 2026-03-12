@@ -1,0 +1,9 @@
+# Emacs generated/tangled output (committed deliberately, not ignored)
+# Uncomment the lines below if you prefer to NOT commit generated files:
+# emacs/.config/emacs/init.el
+# emacs/.config/emacs/early-init.el
+
+# Emacs backup and autosave files
+*~
+\#*\#
+.#*

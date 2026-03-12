@@ -1,0 +1,2703 @@
+
+#+title: My Literate Emacs Config
+#+property: header-args
+#+startup: content
+
+* ~early-init.el~
+
+** use plists (for lsp performance)
+#+begin_src emacs-lisp :tangle "early-init.el" :mkdirp yes
+(setenv "LSP_USE_PLISTS" "true")
+#+end_src
+
+** disable package for elpaca
+#+begin_src emacs-lisp :tangle "early-init.el" :mkdirp yes
+(setq package-enable-at-startup nil)
+#+end_src
+
+** Find gcc and libgccjit packages to be used for emacs on macOS
+#+begin_src emacs-lisp :tangle "early-init.el" :mkdirp yes
+(defun homebrew-gcc-paths ()
+  "Return GCC library paths from Homebrew installations.
+  Detects paths for gcc and libgccjit packages to be used in LIBRARY_PATH."
+  (let* ((paths '())
+         (brew-bin
+          (or (executable-find "brew")
+              (let ((arm-path "/opt/homebrew/bin/brew")
+                    (intel-path "/usr/local/bin/brew"))
+                (cond
+                 ((file-exists-p arm-path)
+                  arm-path)
+                 ((file-exists-p intel-path)
+                  intel-path))))))
+
+    (when brew-bin
+      ;; Get gcc paths.
+      (let* ((gcc-prefix
+              (string-trim
+               (shell-command-to-string
+                (concat brew-bin " --prefix gcc"))))
+             (gcc-lib-current
+              (expand-file-name "lib/gcc/current" gcc-prefix)))
+        (push gcc-lib-current paths)
+
+        ;; Find apple-darwin directory.
+        (let* ((default-directory gcc-lib-current)
+               (arch-dirs
+                (file-expand-wildcards "gcc/*-apple-darwin*/*[0-9]")))
+          (when arch-dirs
+            (push (expand-file-name (car (sort arch-dirs #'string>)))
+                  paths))))
+
+      ;; Get libgccjit paths
+      (let* ((jit-prefix
+              (string-trim
+               (shell-command-to-string
+                (concat brew-bin " --prefix libgccjit"))))
+             (jit-lib-current
+              (expand-file-name "lib/gcc/current" jit-prefix)))
+        (push jit-lib-current paths)))
+
+    (nreverse paths)))
+
+(defun setup-macos-native-comp-library-paths ()
+  "Set up LIBRARY_PATH for native compilation on macOS.
+  Includes Homebrew GCC paths and CommandLineTools SDK libraries."
+  (let*
+      ((existing-paths
+        (split-string (or (getenv "LIBRARY_PATH") "") ":" t))
+       (gcc-paths (homebrew-gcc-paths))
+       (clt-paths
+        '("/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib"))
+       (unique-paths
+        (delete-dups (append existing-paths gcc-paths clt-paths))))
+
+    (setenv "LIBRARY_PATH" (mapconcat #'identity unique-paths ":"))))
+
+;; Set up library paths for native compilation on macOS.
+(when (eq system-type 'darwin)
+  (setup-macos-native-comp-library-paths))
+#+end_src
+
+* ~init.el~
+
+** Initialize package repositories (no tangle anymore, using elpaca now)
+#+begin_src emacs-lisp 
+(require 'package)
+(add-to-list
+ 'package-archives '("melpa" . "https://melpa.org/packages/")
+ t)
+;; Comment/uncomment this line to enable MELPA Stable if desired.  See `package-archive-priorities`
+;; and `package-pinned-packages`. Most users will not need or want to do this.
+;;(add-to-list 'package-archives '("melpa-stable" . "https://stable.melpa.org/packages/") t)
+(package-initialize)
+#+end_src
+
+** Initialize elpaca
+*** Install
+This is the standard install code block for elpaca
+
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(defvar elpaca-installer-version 0.12)
+(defvar elpaca-directory (expand-file-name "elpaca/" user-emacs-directory))
+(defvar elpaca-builds-directory (expand-file-name "builds/" elpaca-directory))
+(defvar elpaca-sources-directory (expand-file-name "sources/" elpaca-directory))
+(defvar elpaca-order '(elpaca :repo "https://github.com/progfolio/elpaca.git"
+                              :ref nil :depth 1 :inherit ignore
+                              :files (:defaults "elpaca-test.el" (:exclude "extensions"))
+                              :build (:not elpaca-activate)))
+(let* ((repo  (expand-file-name "elpaca/" elpaca-sources-directory))
+       (build (expand-file-name "elpaca/" elpaca-builds-directory))
+       (order (cdr elpaca-order))
+       (default-directory repo))
+  (add-to-list 'load-path (if (file-exists-p build) build repo))
+  (unless (file-exists-p repo)
+    (make-directory repo t)
+    (when (<= emacs-major-version 28) (require 'subr-x))
+    (condition-case-unless-debug err
+        (if-let* ((buffer (pop-to-buffer-same-window "*elpaca-bootstrap*"))
+                  ((zerop (apply #'call-process `("git" nil ,buffer t "clone"
+                                                  ,@(when-let* ((depth (plist-get order :depth)))
+                                                      (list (format "--depth=%d" depth) "--no-single-branch"))
+                                                  ,(plist-get order :repo) ,repo))))
+                  ((zerop (call-process "git" nil buffer t "checkout"
+                                        (or (plist-get order :ref) "--"))))
+                  (emacs (concat invocation-directory invocation-name))
+                  ((zerop (call-process emacs nil buffer nil "-Q" "-L" "." "--batch"
+                                        "--eval" "(byte-recompile-directory \".\" 0 'force)")))
+                  ((require 'elpaca))
+                  ((elpaca-generate-autoloads "elpaca" repo)))
+            (progn (message "%s" (buffer-string)) (kill-buffer buffer))
+          (error "%s" (with-current-buffer buffer (buffer-string))))
+      ((error) (warn "%s" err) (delete-directory repo 'recursive))))
+  (unless (require 'elpaca-autoloads nil t)
+    (require 'elpaca)
+    (elpaca-generate-autoloads "elpaca" repo)
+    (let ((load-source-file-function nil)) (load "./elpaca-autoloads"))))
+(add-hook 'after-init-hook #'elpaca-process-queues)
+(elpaca `(,@elpaca-order))
+#+end_src
+
+*** use-package integration
+This way you can use elpaca with use-package.
+~:ensure~ allows for pointing to github repos as well
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(elpaca
+ elpaca-use-package
+ ;; Enable Elpaca support for use-package's :ensure keyword.
+ (elpaca-use-package-mode))
+#+end_src
+
+** Basic emacs configuration
+
+*** Start emacs maximized
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(add-hook 'window-setup-hook 'toggle-frame-maximized t)
+#+end_src
+*** Disable unneeded features
+- These settings are very commonly used to turn emacs into a more suitable editor for programmers
+  
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(setq ring-bell-function #'ignore)
+(setq inhibit-startup-message t)
+(menu-bar-mode -1)
+(tool-bar-mode -1)
+(scroll-bar-mode -1)
+#+end_src
+
+*** Enable repeat mode
+C-x + o, C-x + o, C-x + o becomes C-x + o, o, o
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(repeat-mode 1)
+#+end_src
+
+*** Wrap lines exceeding window size
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(add-hook 'magit-diff-mode-hook 'visual-line-mode)
+(add-hook 'org-mode-hook 'visual-line-mode)
+(add-hook 'markdown-mode-hook 'visual-line-mode)
+#+end_src
+
+*** Disable backups and lockfiles
+By default emacs tries to lockdown and backup files. I want to be able to open and edit in other editors, and backups are messing with my imports
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+  (setq make-backup-files nil)
+  (setq backup-inhibited nil) ;Not sure if needed, given `make-backup-files` above
+  (setq create-lockfiles nil)
+#+end_src
+
+*** Enable buffer line numbers
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(global-display-line-numbers-mode 1)
+(hl-line-mode 1)
+#+end_src
+
+*** Enable history settings
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(recentf-mode 1)
+(setq history-length 25)
+(savehist-mode 1)
+(save-place-mode 1)
+#+end_src
+
+*** Notice and show changes made to files outside emacs 
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(global-auto-revert-mode 1)
+(setq global-auto-revert-non-file-buffers t)
+#+end_src
+
+*** Disable cursors in the minibuffer prompt
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(setq minibuffer-prompt-properties
+      '(read-only t cursor-intangible t face minibuffer-prompt))
+(add-hook 'minibuffer-setup-hook #'cursor-intangible-mode)
+#+end_src
+
+*** Allow the use of mini buffer commands inside a mini buffer
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(setq enable-recursive-minibuffers t)
+(minibuffer-depth-indicate-mode 1)  
+#+end_src
+
+*** Set custom-file to random file
+- This file will be the repository for customizations emacs /would/ have written in ~init.el~ whenever ~M-x customize~ related commands are executed
+- Can even be turned into temporary file, might do that so they never persist
+
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(setq custom-file (locate-user-emacs-file "custom-vars.el"))
+(load custom-file 'noerror 'nomessage)
+;; Disable the damn thing by making it disposable. 
+;; (setq custom-file (make-temp-file "emacs-custom-"))
+#+end_src
+
+*** Create ~hyper~ modifier functionality
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(setq w32-pass-apps-to-system nil)
+(setq w32-apps-modifier 'hyper)
+
+;;(defconst my-leader (if (eq system-type 'darwin) "SPC" "SPC"))
+(defun enable-hyper-super-modifiers-linux-x ()
+  ;; on nowadays linux, <windows> key is usually configured to Super
+
+  ;; menu key as hyper (Note: for H-s, you need to release <menu> key before pressing 's')
+  (define-key key-translation-map [menu] 'event-apply-hyper-modifier) ;H-
+  ;;(define-key key-translation-map [apps] 'event-apply-hyper-modifier)
+
+  ;; by default, Emacs bind <menu> to execute-extended-command (same as M-x) now <menu> defined as 'hyper, we need to press <menu> twice to get <H-menu> (global-set-key (kbd "<H-menu>") 'execute-extended-command)
+  )
+
+(enable-hyper-super-modifiers-linux-x)
+#+end_src
+
+*** Vertico prompt indicator
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+;; Vertico settings
+;; Add prompt indicator to `completing-read-multiple'.
+;; We display [CRM<separator>], e.g., [CRM,] if the separator is a comma.
+(defun crm-indicator (args)
+  (cons
+   (format "[CRM%s] %s"
+           (replace-regexp-in-string
+            "\\`\\[.*?]\\*\\|\\[.*?]\\*\\'" "" crm-separator)
+           (car args))
+   (cdr args)))
+(advice-add #'completing-read-multiple :filter-args #'crm-indicator)
+#+end_src
+
+*** Start Emacs server
+Start the server so =emacsclient= can connect to this instance.
+The guard prevents errors when a second Emacs instance is launched.
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(require 'server)
+(unless (server-running-p)
+  (server-start))
+#+end_src
+
+* Load packages and modules
+Require all of the modules and custom packages tangled to their files
+in tony-lisp / tony-emacs-modules directories throughout this literate
+config
+
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+  (mapc
+   (lambda (string)
+     (add-to-list 'load-path (locate-user-emacs-file string)))
+   '("tony-lisp" "tony-emacs-modules"))
+
+  (require 'tony-emacs-miscellaneous)
+  (require 'tony-emacs-visual-fill-column)
+  (require 'tony-emacs-org)
+  (require 'tony-emacs-project)
+  ;;(require 'tony-emacs-treemacs)
+  (require 'tony-emacs-pulsar)
+  (require 'tony-emacs-fonts)
+  (require 'tony-emacs-nerd-icons)
+  (require 'tony-emacs-tweakers)
+  (require 'tony-emacs-meow)
+  (require 'tony-emacs-which-key)
+  ;;(require 'tony-emacs-prot-themes)
+  ;;(require 'tony-emacs-doom-themes)
+  ;;(require 'tony-emacs-solaire-mode)
+  (require 'tony-emacs-themes)
+  (require 'tony-emacs-doom-modeline)
+  ;(require 'tony-emacs-textsize)
+  (require 'tony-emacs-vertico)
+  (require 'tony-emacs-marginalia)
+  (require 'tony-emacs-orderless)
+  (require 'tony-emacs-consult)
+  (require 'tony-emacs-diff-hl)
+  (require 'tony-emacs-magit)
+  (require 'tony-emacs-blamer)
+  (require 'tony-emacs-denote)
+  (require 'tony-emacs-completion)
+  (require 'tony-emacs-spellchecker)
+  (require 'tony-emacs-linter)
+  (require 'tony-emacs-prettier)
+  (require 'tony-emacs-treesit)
+  (require 'tony-emacs-languages)
+  (require 'tony-emacs-lsp-mode)
+  ;;(require 'tony-emacs-lsp-treemacs)
+  (require 'tony-emacs-ngx)
+  (require 'tony-emacs-lsp-biome)
+  (require 'tony-emacs-info-manuals)
+  (require 'tony-emacs-copilot)
+  (require 'tony-emacs-agent-shell)
+  (require 'tony-emacs-agent-shell-sidebar)
+#+end_src
+
+* Packages
+** ~ngxhtml-ts-mode.el~
+#+begin_src emacs-lisp :tangle "tony-lisp/ngxhtml-ts-mode.el" :mkdirp yes
+;;; ngxhtml-ts-mode.el --- tree-sitter support for NGXHTML  -*- lexical-binding: t; -*-
+
+;; Took this from github.com/yolksys
+
+;; Copyright (C) 2023-2025 Free Software Foundation, Inc.
+
+;; Author     : cyf <theo@thornhill.no>
+;; Maintainer : yf <theo@thornhill.no>
+;; Created    : January 2025
+;; Keywords   : ngxhtml languages tree-sitter
+
+;; This file is not part of GNU Emacs.
+
+;; This file is free software
+
+;; GNU Emacs is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; GNU Emacs is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.
+
+;;; Commentary:
+;;
+
+;;; Code:
+
+(require 'treesit)
+(require 'sgml-mode)
+
+(if (not treesit-load-name-override-list)
+    (setq treesit-load-name-override-list
+          '((ngxhtml "libtree-sitter-angular" "tree_sitter_angular")))
+  (add-to-list
+   treesit-load-name-override-list
+   '(ngxhtml "libtree-sitter-angular" "tree_sitter_angular")))
+
+;;;for ngxhtml start
+(defgroup ngx-group nil
+  "ngx group")
+
+(defface ngx-control-face
+  '((((class color) (min-colors 88) (background light))
+     :foreground "#D73A49")
+    (((class color) (min-colors 88) (background dark))
+     :foreground "#F97583")
+    (((class color) (min-colors 16) (background light))
+     :foreground "#D73A49")
+    (((class color) (min-colors 16) (background dark))
+     :foreground "#F97583")
+    (((class color) (min-colors 8))
+     :background "green"
+     :foreground "black")
+    (t :inverse-video t))
+  "Basic face for ngx."
+  :group 'ngx-group)
+
+(defface ngx-pipe-face
+  '((((class color) (min-colors 88) (background light))
+     :foreground "#6F42C1")
+    (((class color) (min-colors 88) (background dark))
+     :foreground "#B392F0")
+    (((class color) (min-colors 16) (background light))
+     :foreground "#6F42C1")
+    (((class color) (min-colors 16) (background dark))
+     :foreground "#B392F0")
+    (((class color) (min-colors 8))
+     :background "green"
+     :foreground "black")
+    (t :inverse-video t))
+  "Basic face for ngx."
+  :group 'ngx-group)
+
+(defface ngx-bind-face
+  '((((class color) (min-colors 88) (background light))
+     :foreground "#6F42C1")
+    (((class color) (min-colors 88) (background dark))
+     :foreground "#8514f5")
+    (((class color) (min-colors 16) (background light))
+     :foreground "#6F42C1")
+    (((class color) (min-colors 16) (background dark))
+     :foreground "#8514f5")
+    (((class color) (min-colors 8))
+     :background "green"
+     :foreground "black")
+    (t :inverse-video t))
+  "Basic face for ngx."
+  :group 'ngx-group)
+
+(defface ngx-id-face
+  '((((class color) (min-colors 88) (background light))
+     :foreground "#22863A")
+    (((class color) (min-colors 88) (background dark))
+     :foreground "#85E89D")
+    (((class color) (min-colors 16) (background light))
+     :foreground "#22863A")
+    (((class color) (min-colors 16) (background dark))
+     :foreground "#85E89D")
+    (((class color) (min-colors 8))
+     :background "green"
+     :foreground "black")
+    (t :inverse-video t))
+  "Basic face for ngx."
+  :group 'ngx-group)
+
+;;;for ngxhtml end
+
+(defcustom ngxhtml-ts-mode-indent-offset 2
+  "Number of spaces for each indentation step in `ngxhtml-ts-mode'."
+  :version "29.1"
+  :type 'integer
+  :safe 'integerp
+  :group 'ngxhtml)
+
+(defvar ngxhtml-ts-mode--indent-rules
+  `((ngxhtml
+     ((parent-is "fragment") column-0 0)
+     ((node-is "/>") parent-bol 0)
+     ((node-is ">") parent-bol 0)
+     ((node-is "end_tag") parent-bol 0)
+     ((node-is "}") parent-bol 0) ;;;
+     ((parent-is "statement_block")
+      parent-bol
+      ngxhtml-ts-mode-indent-offset) ;;;
+     ((parent-is "comment") prev-adaptive-prefix 0)
+     ((parent-is "element") parent-bol ngxhtml-ts-mode-indent-offset)
+     ((parent-is "script_element")
+      parent-bol
+      ngxhtml-ts-mode-indent-offset)
+     ((parent-is "style_element")
+      parent-bol
+      ngxhtml-ts-mode-indent-offset)
+     ((parent-is "start_tag")
+      parent-bol
+      ngxhtml-ts-mode-indent-offset)
+     ((parent-is "self_closing_tag")
+      parent-bol
+      ngxhtml-ts-mode-indent-offset)
+     (catch-all parent-bol 0)))
+  "Tree-sitter indent rules.")
+
+(defvar ngxhtml-ts-mode--font-lock-settings
+  (treesit-font-lock-rules
+   :language 'ngxhtml
+   :override t
+   :feature
+   'comment
+   `((comment) @font-lock-comment-face)
+   :language 'ngxhtml
+   :override t
+   :feature
+   'keyword
+   `("doctype" @font-lock-keyword-face)
+   :language 'ngxhtml
+   :override t
+   :feature
+   'definition
+   `((tag_name) @font-lock-function-name-face)
+   :language 'ngxhtml
+   :override t
+   :feature
+   'string
+   `((quoted_attribute_value) @font-lock-string-face)
+   :language 'ngxhtml
+   :override t
+   :feature
+   'property
+   `((attribute_name) @font-lock-variable-name-face)
+
+   ;;;ngx start
+   :language 'ngxhtml
+   :override t
+   :feature
+   'id
+   `((identifier) @ngx-id-face)
+   :language 'ngxhtml
+   :override t
+   :feature
+   'control
+   `(["@" @ngx-control-face (control_keyword) @ngx-control-face])
+   :language 'ngxhtml
+   :override t
+   :feature
+   'pipe
+   `((pipe_call) @ngx-pipe-face)
+   :language 'ngxhtml
+   :feature
+   'bind
+   `((["(" @ngx-bind-face "[" @ngx-bind-face "[(" @ngx-bind-face]
+      (binding_name)))
+   :language 'ngxhtml
+   :override t
+   :feature
+   'bind
+   `(((binding_name)
+      @ngx-bind-face
+      [")" @ngx-bind-face "]" @ngx-bind-face ")]" @ngx-bind-face])))
+  ;;;ngx end
+  "Tree-sitter font-lock settings for `ngxhtml-ts-mode'.")
+
+(defun ngxhtml-ts-mode--defun-name (node)
+  "Return the defun name of NODE.
+  Return nil if there is no name or if NODE is not a defun node."
+  (when (equal (treesit-node-type node) "tag_name")
+    (treesit-node-text node t)))
+
+;;;###autoload
+(define-derived-mode
+ ngxhtml-ts-mode
+ html-mode
+ "NGXHTML[ts]"
+ "Major mode for editing Ngxhtml, powered by tree-sitter."
+ :group 'ngxhtml
+
+ (unless (treesit-ready-p 'ngxhtml)
+   (error "Tree-sitter for NGXHTML isn't available"))
+
+ (treesit-parser-create 'ngxhtml)
+
+ ;; Indent.
+ (setq-local treesit-simple-indent-rules
+             ngxhtml-ts-mode--indent-rules)
+
+ ;; Navigation.
+ (setq-local treesit-defun-type-regexp "element")
+
+ (setq-local treesit-defun-name-function
+             #'ngxhtml-ts-mode--defun-name)
+
+ (setq-local treesit-thing-settings
+             `((ngxhtml
+                (sexp
+                 ,(regexp-opt
+                   '("element" "text" "attribute" "value")))
+                (sentence "tag")
+                (text ,(regexp-opt '("comment" "text"))))))
+
+ ;; Font-lock.
+ (setq-local treesit-font-lock-settings
+             ngxhtml-ts-mode--font-lock-settings)
+ (setq-local treesit-font-lock-feature-list
+             '((comment keyword definition)
+               (property string)
+               (control pipe bind icu utl sd id)
+               ()
+               ()))
+
+ ;; Imenu.
+ (setq-local treesit-simple-imenu-settings
+             '(("Element" "\\`tag_name\\'" nil nil)))
+
+ ;; Outline minor mode.
+ (setq-local treesit-outline-predicate "\\`element\\'")
+ ;; `ngxhtml-ts-mode' inherits from `ngxhtml-mode' that sets
+ ;; regexp-based outline variables.  So need to restore
+ ;; the default values of outline variables to be able
+ ;; to use `treesit-outline-predicate' above.
+ (kill-local-variable 'outline-regexp)
+ (kill-local-variable 'outline-heading-end-regexp)
+ (kill-local-variable 'outline-level)
+
+ (treesit-major-mode-setup))
+
+(derived-mode-add-parents 'ngxhtml-ts-mode '(html-mode))
+
+(if (treesit-ready-p 'ngxhtml)
+    (add-to-list
+     'auto-mode-alist '("\\.component.html\\'" . ngxhtml-ts-mode)))
+
+(provide 'ngxhtml-ts-mode)
+
+;;; ngxhtml-ts-mode.el ends here
+#+end_src
+
+* Modules
+** ~miscellaneous.el~
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-miscellaneous.el" :mkdirp yes
+(use-package
+ exec-path-from-shell
+ :ensure t
+ :config
+ (when (memq window-system '(mac ns x))
+   (exec-path-from-shell-initialize)))
+(provide 'tony-emacs-miscellaneous)
+#+end_src
+** ~visual-fill-column.el~
+*** configure and install package
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-visual-fill-column.el" :mkdirp yes
+  (use-package visual-fill-column
+  :ensure t
+  :hook (org-mode . visual-line-mode)
+  :init
+  (setq-default visual-fill-column-center-text t)
+  (setq-default visual-fill-column-width 100)
+  (setq-default visual-fill-column-enable-sensible-window-split t)
+
+  (add-hook 'visual-line-mode-hook #'visual-fill-column-for-vline)
+
+  :config
+  (advice-add 'text-scale-adjust :after #'visual-fill-column-adjust))
+#+end_src
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-visual-fill-column.el" :mkdirp yes
+ (provide 'tony-emacs-visual-fill-column)
+#+end_src
+** ~languages.el~
+*** shell
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-languages.el" :mkdirp yes
+(use-package
+ sh-mode
+ :ensure nil ;; built in
+ :mode "\\.zsh\\'" "\\.sh\\'")
+#+end_src
+
+*** lisp
+**** aggressive-indent
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-languages.el" :mkdirp yes
+(use-package
+ aggressive-indent
+ :ensure t
+ :hook
+
+ '(clojure-mode
+   elisp-mode emacs-lisp-mode lisp-mode common-lisp-mode scheme-mode))
+#+end_src
+
+**** smart-parens
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-languages.el" :mkdirp yes
+(use-package
+ smartparens
+ :ensure t
+ :hook
+ (clojure-mode . smartparens-mode)
+ (scheme-mode . smartparens-mode)
+ :config (require 'smartparens-config))
+#+end_src
+
+**** racket
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-languages.el" :mkdirp yes
+  (setq racket-program "/usr/bin/racket")
+  (setq org-babel-debug t)
+
+  (use-package
+   racket-mode
+   :after org
+   :ensure t
+   :config (add-to-list 'org-babel-load-languages '(racket . t)))
+#+end_src
+
+**** paredit
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-languages.el" :mkdirp yes
+(use-package
+ paredit
+ :ensure t
+ :hook
+ ;; Use the :hook keyword for modern use-package syntax
+ (racket-mode-hook . paredit-mode))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-languages.el" :mkdirp yes
+(provide 'tony-emacs-languages)
+#+end_src
+
+** ~org.el~
+*** org mode setup
+Setup org mode basics:
+- log done with time
+- also logged status updates should be foldable and separate from rest
+  of header content
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
+  (use-package
+   org
+   :ensure nil
+   :init
+   (setopt org-confirm-babel-evaluate nil)
+   (setq org-directory (expand-file-name "~/Documents/org/"))
+   (setq org-imenu-depth 7)
+   (setq org-log-done 'time)
+   (setq org-log-into-drawer t)
+   :config
+   (setq org-startup-indented t)
+   (add-to-list 'org-src-lang-modes '("typescript" . typescript-ts))
+   )
+#+end_src
+
+*** org agenda set up
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
+  (use-package
+    org-agenda
+    :ensure nil
+    :bind
+    (("C-c A" . org-agenda))
+    :config (setq org-agenda-files (list org-directory)))
+#+end_src
+
+*** org alert setup
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
+  ;; (use-package org-alert
+  ;;   :ensure t
+  ;;   :hook (org-agenda-mode . org-alert-mode))
+#+end_src
+
+
+*** org modern set up
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
+  (use-package
+   org-modern
+   :ensure t
+   :hook (org-mode . org-modern-mode)
+   :config
+   (setq
+    org-modern-keyword nil
+    org-modern-block-name nil
+    org-modern-timestamp nil
+    ))
+#+end_src
+
+*** org-modern-indent
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
+(use-package org-modern-indent
+  :ensure (:host github :repo "jdtsmith/org-modern-indent")
+  :hook
+  (org-mode . org-modern-indent-mode))
+#+end_src
+
+*** org appear set up
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
+(use-package org-appear :ensure t :hook (org-mode . org-appear-mode))
+(setq org-appear-trigger 'always)
+#+end_src
+
+*** org-babel setup
+
+**** racket ob-babel 
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
+(use-package ob-racket
+  :ensure (:host github :repo "DEADB17/ob-racket"))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
+(provide 'tony-emacs-org)
+#+end_src
+
+** ~denote.el~
+*** use and config denote
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-denote.el" :mkdirp yes
+(use-package
+ denote
+ :ensure t
+ :demand t
+ :init
+ :config
+ (setq denote-file-type 'org)
+ (setq denote-workdir (expand-file-name "~/Documents/org/work-notes"))
+ (setq denote-directory (expand-file-name "~/Documents/org/denote"))
+ (setq denote-known-keywords
+       '("emacs"
+         "org mode"
+         "denote"
+         "game dev"
+         "godot"
+         "C"
+         "lisp"
+         "typescript"
+         "javascript"
+         "angular"
+         "ngrx"
+         "hand tools"
+         "power tools"
+         "offroading"
+         "preparedness")))
+#+end_src
+*** use and config denote-journal
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-denote.el" :mkdirp yes
+(use-package
+ denote-journal
+ :ensure t
+ :demand t
+ :after denote
+ :custom
+ (denote-journal-directory
+  (expand-file-name "journal" denote-directory))
+ (denote-journal-title-format 'day-date-month-year)
+ (denote-journal-keyword "journal")
+
+ :config
+ (with-eval-after-load 'org-capture
+   (add-to-list
+    'org-capture-templates
+    '("ndj"
+      "Journal"
+      entry
+      (file denote-journal-path-to-new-or-existing-entry)
+      "* %U\n\n%?"
+      :kill-buffer t
+      :empty-lines 1)))
+
+ :bind
+ (("C-c n j" . denote-journal-new-entry)
+  ("C-c n J" . denote-journal-new-or-existing-entry)))
+#+end_src
+
+*** use and config denote markdown
+possible obsidian usage
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-denote.el" :mkdirp yes
+(use-package
+ denote-markdown
+ ;; TODO There is apparently Obsidian support. Maybe I could create a Silo or
+ ;; something that is located at the Obsidian directory. Having the ability to
+ ;; link my Obsidian notes with my denote(s) would be really nice. Definitely
+ ;; going to look into this.
+ :ensure t
+ :demand t
+ :after denote)
+#+end_src
+
+*** use and config denote-silo
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-denote.el" :mkdirp yes
+(use-package
+ denote-silo
+ :ensure t
+ :demand t
+ :after denote
+ :custom
+ (denote-silo-directories (list denote-directory denote-workdir))
+ :bind
+ (("C-c N d" . denote-silo-dired)
+  ("C-c N n" . denote-silo-open-or-create)
+  ("C-c N N" . denote-silo-select-silo-then-command)
+  ("C-c N c" . denote-silo-cd)))
+#+end_src
+
+*** use and config denote-explore
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-denote.el" :mkdirp yes
+(use-package
+ denote-explore
+ :ensure t
+ :after denote
+ :custom
+ ;; Where to store network data and in which format
+ (denote-explore-network-directory
+  (concat denote-directory "/graphs/"))
+ (denote-explore-network-filename "denote-network")
+ ;; Output format
+ (denote-explore-network-format 'graphviz)
+ (denote-explore-network-graphviz-filetype "svg")
+ ;; Exlude keywords or regex
+ (denote-explore-network-keywords-ignore '("bib"))
+ :bind
+ ( ;; Statistics
+  ("C-c n e c" . denote-explore-count-notes)
+  ("C-c n e C" . denote-explore-count-keywords)
+  ("C-c n e b" . denote-explore-keywords-barchart)
+  ("C-c n e x" . denote-explore-extensions-barchart)
+  ;; Random walks
+  ("C-c n e r" . denote-explore-random-note)
+  ("C-c n e l" . denote-explore-random-link)
+  ("C-c n e k" . denote-explore-random-keyword)
+  ;; Denote Janitor
+  ("C-c n e d" . denote-explore-identify-duplicate-notes)
+  ("C-c n e z" . denote-explore-zero-keywords)
+  ("C-c n e s" . denote-explore-single-keywords)
+  ("C-c n e o" . denote-explore-sort-keywords)
+  ("C-c n e r" . denote-explore-rename-keywords)
+  ;; Visualise denote
+  ("C-c n e n" . denote-explore-network)
+  ("C-c n e v" . denote-explore-network-regenerate)
+  ("C-c n e D" . denote-explore-degree-barchart)))
+#+end_src
+
+*** use and config consult denote
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-denote.el" :mkdirp yes
+(use-package consult-denote
+  :ensure t
+  :bind
+  (("C-c n c f" . consult-denote-find)
+   ("C-c n c g" . consult-denote-grep))
+
+  :custom
+  (consult-denote-find-command 'consult-fd)
+  (consult-denote-grep-command 'consult-ripgrep)
+
+  :config
+  (consult-denote-mode 1))
+#+end_src
+
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-denote.el" :mkdirp yes
+(provide 'tony-emacs-denote)
+#+end_src
+
+** ~project.el~
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-project.el" :mkdirp yes
+(use-package project :ensure nil)
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-project.el" :mkdirp yes
+(provide 'tony-emacs-project)
+#+end_src
+
+** ~treemacs.el~
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-treemacs.el" :mkdirp yes
+;;for treemacs
+(use-package
+ treemacs
+ :ensure t
+ :defer t
+ :config
+ (progn
+   (setq
+    treemacs-collapse-dirs
+    (if treemacs-python-executable
+        3
+      0)
+    treemacs-deferred-git-apply-delay 0.5
+    treemacs-directory-name-transformer #'identity
+    treemacs-display-in-side-window t
+    treemacs-eldoc-display 'simple
+    treemacs-file-event-delay 2000
+    treemacs-file-extension-regex treemacs-last-period-regex-value
+    treemacs-file-follow-delay 0.2
+    treemacs-file-name-transformer #'identity
+    treemacs-follow-after-init t
+    treemacs-expand-after-init t
+    treemacs-find-workspace-method 'find-for-file-or-pick-first
+    treemacs-git-command-pipe ""
+    treemacs-goto-tag-strategy 'refetch-index
+    treemacs-header-scroll-indicators '(nil . "^^^^^^")
+    treemacs-hide-dot-git-directory t
+    treemacs-indentation 2
+    treemacs-indentation-string " "
+    treemacs-is-never-other-window nil
+    treemacs-max-git-entries 5000
+    treemacs-missing-project-action 'ask
+    treemacs-move-files-by-mouse-dragging t
+    treemacs-move-forward-on-expand nil
+    treemacs-no-png-images nil
+    treemacs-no-delete-other-windows t
+    treemacs-project-follow-cleanup nil
+    treemacs-persist-file (expand-file-name ".cache/treemacs-persist" user-emacs-directory)
+    treemacs-position 'left
+    treemacs-read-string-input 'from-child-frame
+    treemacs-recenter-distance 0.1
+    treemacs-recenter-after-file-follow nil
+    treemacs-recenter-after-tag-follow nil
+    treemacs-recenter-after-project-jump 'always
+    treemacs-recenter-after-project-expand 'on-distance
+    treemacs-litter-directories '("/node_modules" "/.venv" "/.cask")
+    treemacs-project-follow-into-home nil
+    treemacs-show-cursor nil
+    treemacs-show-hidden-files t
+    treemacs-silent-filewatch nil
+    treemacs-silent-refresh nil
+    treemacs-sorting 'alphabetic-asc
+    treemacs-select-when-already-in-treemacs 'move-back
+    treemacs-space-between-root-nodes t
+    treemacs-tag-follow-cleanup t
+    treemacs-tag-follow-delay 1.5
+    treemacs-text-scale nil
+    treemacs-user-mode-line-format nil
+    treemacs-user-header-line-format nil
+    treemacs-wide-toggle-width 70
+    treemacs-width 35
+    treemacs-width-increment 1
+    treemacs-width-is-initially-locked t
+    treemacs-workspace-switch-cleanup nil)
+   ;; The default width and height of the icons is 22 pixels. If you are
+   ;; using a Hi-DPI display, uncomment this to double the icon size.
+   ;;(treemacs-resize-icons 44)
+   (treemacs-follow-mode t)
+   (treemacs-filewatch-mode t)
+   (treemacs-fringe-indicator-mode 'always)
+   (when treemacs-python-executable
+     (treemacs-git-commit-diff-mode t))
+
+   (pcase (cons
+           (not (null (executable-find "git")))
+           (not (null treemacs-python-executable)))
+     (`(t . t) (treemacs-git-mode 'deferred))
+     (`(t . _) (treemacs-git-mode 'simple)))
+
+   (treemacs-hide-gitignored-files-mode nil))
+ :bind
+ (:map
+  global-map
+  ("M-0" . treemacs-select-window)
+  ("C-x t 1" . treemacs-delete-other-windows)
+  ("C-x t t" . treemacs)
+  ("C-x t d" . treemacs-select-directory)
+  ("C-x t B" . treemacs-bookmark)
+  ("C-x t C-t" . treemacs-find-file)
+  ("C-x t M-t" . treemacs-find-tag)))
+(use-package
+ treemacs-icons-dired
+ :hook (dired-mode . treemacs-icons-dired-enable-once)
+ :ensure t)
+;;(use-package treemacs-magit
+;;  :after (treemacs magit)
+;;  :ensure t)
+;;(use-package treemacs-persp ;;treemacs-perspective if you use perspective.el vs. persp-mode
+;; :after (treemacs persp-mode) ;;or perspective vs. persp-mode
+;;  :ensure t
+;;  :config (treemacs-set-scope-type 'Perspectives))
+;;(use-package treemacs-tab-bar ;;treemacs-tab-bar if you use tab-bar-mode
+;;  :after (treemacs)
+;;  :ensure t
+;;  :config (treemacs-set-scope-type 'Tabs))
+(treemacs-start-on-boot)
+
+
+(provide 'tony-emacs-treemacs)
+#+end_src
+
+** ~tweakers.el~
+
+*** use and config anzu
+Display number of matches in modeline when searching
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-tweakers.el" :mkdirp yes
+(use-package anzu :ensure t :config (global-anzu-mode))
+#+end_src
+
+*** use and configure surround
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-tweakers.el" :mkdirp yes
+(use-package
+ surround
+ :ensure t
+ :bind-keymap ("C-c s" . surround-keymap))
+#+end_src
+
+*** use and configure ultra-scroll
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-tweakers.el" :mkdirp yes
+;; (pixel-scroll-precision-mode)
+(use-package
+ ultra-scroll
+ :ensure t
+ :init
+ (setopt
+  scroll-conservatively 3
+  scroll-margin 0)
+ :config (ultra-scroll-mode 1))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-tweakers.el" :mkdirp yes
+(provide 'tony-emacs-tweakers)
+#+end_src
+
+** ~meow.el~
+*** setup meow config
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-meow.el" :mkdirp yes
+(defun meow-setup ()
+  (setq meow-cheatsheet-layout meow-cheatsheet-layout-qwerty)
+  (meow-motion-overwrite-define-key
+   '("j" . meow-next) '("k" . meow-prev) '("<escape>" . ignore))
+  (meow-leader-define-key
+   ;; SPC j/k will run the original command in MOTION state.
+   '("j" . "H-j")
+   '("k" . "H-k")
+   ;; Use SPC (0-9) for digit arguments.
+   '("1" . meow-digit-argument)
+   '("2" . meow-digit-argument)
+   '("3" . meow-digit-argument)
+   '("4" . meow-digit-argument)
+   '("5" . meow-digit-argument)
+   '("6" . meow-digit-argument)
+   '("7" . meow-digit-argument)
+   '("8" . meow-digit-argument)
+   '("9" . meow-digit-argument)
+   '("0" . meow-digit-argument)
+   '("/" . meow-keypad-describe-key)
+   '("?" . meow-cheatsheet))
+  (meow-normal-define-key
+   '("0" . meow-expand-0)
+   '("9" . meow-expand-9)
+   '("8" . meow-expand-8)
+   '("7" . meow-expand-7)
+   '("6" . meow-expand-6)
+   '("5" . meow-expand-5)
+   '("4" . meow-expand-4)
+   '("3" . meow-expand-3)
+   '("2" . meow-expand-2)
+   '("1" . meow-expand-1)
+   '("-" . negative-argument)
+   '(";" . meow-reverse)
+   '("," . meow-inner-of-thing)
+   '("." . meow-bounds-of-thing)
+   '("[" . meow-beginning-of-thing)
+   '("]" . meow-end-of-thing)
+   '("a" . meow-append)
+   '("A" . meow-open-below)
+   '("b" . meow-back-word)
+   '("B" . meow-back-symbol)
+   '("c" . meow-change)
+   '("d" . meow-delete)
+   '("D" . meow-backward-delete)
+   '("e" . meow-next-word)
+   '("E" . meow-next-symbol)
+   '("f" . meow-find)
+   '("g" . meow-cancel-selection)
+   '("G" . meow-grab)
+   '("h" . meow-left)
+   '("H" . meow-left-expand)
+   '("i" . meow-insert)
+   '("I" . meow-open-above)
+   '("j" . meow-next)
+   '("J" . meow-next-expand)
+   '("k" . meow-prev)
+   '("K" . meow-prev-expand)
+   '("l" . meow-right)
+   '("L" . meow-right-expand)
+   '("m" . meow-join)
+   '("n" . meow-search)
+   '("o" . meow-block)
+   '("O" . meow-to-block)
+   '("p" . meow-yank)
+   '("q" . meow-quit)
+   '("Q" . meow-goto-line)
+   '("r" . meow-replace)
+   '("R" . meow-swap-grab)
+   '("s" . meow-kill)
+   '("t" . meow-till)
+   '("u" . meow-undo)
+   '("U" . meow-undo-in-selection)
+   '("v" . meow-visit)
+   '("w" . meow-mark-word)
+   '("W" . meow-mark-symbol)
+   '("x" . meow-line)
+   '("X" . meow-goto-line)
+   '("y" . meow-save)
+   '("Y" . meow-clipboard-save)
+   '("z" . meow-pop-selection)
+   '("'" . repeat)
+   '("<escape>" . ignore)))
+#+end_src
+
+*** start up meow package
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-meow.el" :mkdirp yes
+(use-package meow :ensure t :config (meow-setup) (meow-global-mode 1))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-meow.el" :mkdirp yes
+(provide 'tony-emacs-meow)
+#+end_src
+
+** ~which-key.el~
+*** setup which key
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-which-key.el" :mkdirp yes
+(use-package which-key :ensure t :config (which-key-mode))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-which-key.el" :mkdirp yes
+(provide 'tony-emacs-which-key)
+#+end_src
+** ~themes.el~
+*** Themes directory
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
+(setopt custom-theme-directory "~/.config/emacs/themes/")
+#+end_src
+*** Set custom themes safe
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
+(setq custom-safe-themes t)
+#+end_src
+*** Hooks
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
+(add-hook 'after-make-frame-functions #'my-load-theme-in-all-frames)
+#+end_src
+*** Modus themes
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
+  (use-package modus-themes
+    :ensure t)
+#+end_src
+
+*** Ef themes
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
+(use-package ef-themes
+ :ensure t
+    )
+#+end_src
+
+*** Standard themes
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
+  (use-package standard-themes
+  :ensure t)
+#+end_src
+
+*** Doric themes
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
+(use-package
+ doric-themes
+ :ensure t
+ :custom (doric-themes-toggle '(doric-light doric-obsidian)))
+#+end_src
+
+*** Doom
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
+(use-package
+ doom-themes
+ :ensure t
+ :init
+ (defun my-rose-pine ()
+   "Clear previous theme and load rosé pine."
+   (interactive)
+   (my-load-theme 'doom-rose-pine))
+
+ (defun my-rose-pine-dawn ()
+   "Clear previous theme and load rosé pine dawn."
+   (interactive)
+   (my-load-theme 'doom-rose-pine-dawn))
+
+ (defun my-doom-one ()
+   "Clear previous theme and load doom-one."
+   (interactive)
+   (my-load-theme 'doom-one))
+
+ (defun my-gruvbox ()
+   "Clear previous theme and load gruvbox."
+   (interactive)
+   (my-load-theme 'doom-gruvbox))
+
+ (defun my-gruvbox-light ()
+   "Clear previous theme and load gruvbox."
+   (interactive)
+   (my-load-theme 'doom-gruvbox-light))
+
+ (defun my-toggle-rose-pine ()
+   "Toggle between light and dark Rosé Pine themes."
+   (interactive)
+   (if (eq (nth 0 custom-enabled-themes) 'doom-rose-pine)
+       (my-rose-pine-dawn)
+     (my-rose-pine)))
+
+ (defun my-toggle-gruvbox ()
+   "Toggle between light and dark Gruvbox themes."
+   (interactive)
+   (if (eq (nth 0 custom-enabled-themes) 'doom-gruvbox)
+       (my-gruvbox-light)
+     (my-gruvbox)))
+
+ (defun my-toggle-tomorrow ()
+   "Toggle between light and dark Tomorrow themes."
+   (interactive)
+   (if (eq (nth 0 custom-enabled-themes) 'doom-tomorrow-night)
+       (my-load-theme 'doom-tomorrow-day)
+     (my-load-theme 'doom-tomorrow-night)))
+ :custom (doom-themes-enable-bold t) (doom-themes-enable-italic t)
+ :config (doom-themes-org-config))
+#+end_src
+
+*** Naysayer
+
+Based on theme from Jonathan Blow's livestreams.
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
+(use-package
+ naysayer-theme
+ :ensure t
+ :init
+ (defun my-naysayer-theme ()
+   "Clear previous theme and load naysayer."
+   (interactive)
+   (my-load-theme 'naysayer)))
+#+end_src
+
+*** Acme theme
+
+Inspired by Plan 9 Acme & Sam.
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
+(use-package
+ acme-theme
+ :ensure t
+ :init (setq acme-theme-black-fg t)
+
+ (defun my-acme-theme ()
+   "Clear previous theme and load acme."
+   (interactive)
+   (my-load-theme 'acme)))
+#+end_src
+
+*** Kaolin
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
+(use-package
+ kaolin-themes
+ :ensure t
+ :init
+ (defun my-kaolin-dark ()
+   "Clear previous theme and load kaolin dark."
+   (interactive)
+   (my-load-theme 'kaolin-dark))
+
+ (defun my-kaolin-light ()
+   "Clear previous theme and load kaolin light."
+   (interactive)
+   (my-load-theme 'kaolin-light))
+
+ (defun my-kaolin-mono-dark ()
+   "Clear previous theme and load kaolin mono dark."
+   (interactive)
+   (my-load-theme 'kaolin-mono-dark))
+
+ (defun my-kaolin-mono-light ()
+   "Clear previous theme and load kaolin mono light."
+   (interactive)
+   (my-load-theme 'kaolin-mono-light)))
+#+end_src
+
+*** Solarized
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
+  (defun my-toggle-solarized ()
+    "Toggle between light and dark solarized themes."
+    (interactive)
+    (if (eq (nth 0 custom-enabled-themes) 'doom-solarized-dark)
+        (my-solarized-light)
+      (my-solarized-dark)))
+
+  (defun my-solarized-light ()
+    "Clear previous theme and load solarized light"
+    (interactive)
+    (my-load-theme 'doom-solarized-light))
+
+  (defun my-solarized-dark ()
+    "Clear previous theme and load solarized dark"
+    (interactive)
+    (my-load-theme 'doom-solarized-dark))
+#+end_src
+
+*** Functions
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
+  (use-package remember-last-theme
+    :after (acme-theme kaolin-themes naysayer-theme doom-themes doric-themes standard-themes ef-themes modus-themes)
+    :config
+    (remember-theme-load)
+    (add-hook 'kill-emacs-hook 'remember-theme-save)
+    )
+#+end_src
+
+*** Provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
+(provide 'tony-emacs-themes)
+#+end_src
+
+** ~solaire-mode.el~
+*** use and config solaire mode
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-solaire-mode.el" :mkdirp yes
+(use-package solaire-mode :ensure t :config (solaire-global-mode +1))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-solaire-mode.el"
+(provide 'tony-emacs-solaire-mode)
+#+end_src
+
+** ~doom-modeline.el~
+*** use and config doom modeline
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-doom-modeline.el" :mkdirp yes
+(use-package doom-modeline :ensure t :init (doom-modeline-mode 1))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-doom-modeline.el" :mkdirp yes
+(provide 'tony-emacs-doom-modeline)
+#+end_src
+
+** ~textsize.el~
+*** use and config textsize
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-textsize.el" :mkdirp yes
+(use-package
+ textsize
+ :ensure t
+ :init (textsize-mode)
+ ;; Can set macOS specific font size if necessary
+ :custom
+ (textsize-default-points
+  (if (eq system-type 'darwin)
+      15
+    15))
+ :config (textsize-fix-frame)
+ (customize-set-variable
+  'textsize-monitor-size-thresholds
+  '((0 . -3) (340 . 0) (600 . -1) (900 . 6) (1200 . 9)))
+ (customize-set-variable
+  'textsize-pixel-pitch-thresholds '((0 . 15) (.08 . 15) (0.11 . 0))))
+#+end_src
+
+*** textsize-metrics creation
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-textsize.el" :mkdirp yes
+;; stole this from jmccarrell
+(defun tb/dump-frame-textsize-metrics ()
+  "Dump selected frame metrics from the currently selected frame to the *Message* buffer.
+  Intended to be helpful for debugging the choices textsize makes for a given monitor/display."
+  (interactive)
+  (let (f
+        (selected-frame))
+    (message "emacs frame geometry: X Y WIDTH HEIGHT: %s"
+             (frame-monitor-attribute 'geometry f))
+    (message "emacs monitor size WIDTH HEIGHT mm: %s"
+             (frame-monitor-attribute 'mm-size f))
+    (message "textsize monitor size  mm: %d"
+             (textsize--monitor-size-mm f))
+    (message "textsize monitor size pix: %d"
+             (textsize--monitor-size-px f))
+    (message "pixel pitch %.02f" (textsize--pixel-pitch f))
+    (message "textsize default points %d" textsize-default-points)
+    (message "textsize frame offset %d"
+             (or (frame-parameter f 'textsize-manual-adjustment) 0))
+    (message "pixel pitch adjustment %d"
+             (textsize--threshold-offset
+              textsize-pixel-pitch-thresholds
+              (textsize--pixel-pitch f)))
+    (message "monitor size adjustment %d"
+             (textsize--threshold-offset
+              textsize-monitor-size-thresholds
+              (textsize--monitor-size-mm f)))
+    (message "text size chosen: %d" (textsize--point-size f))
+    (message "default-font: WIDTHxHEIGHT %dx%d"
+             (default-font-width)
+             (default-font-height))
+    (message "resultant text area in chars WIDTHxHEIGHT %dx%d"
+             (frame-width f)
+             (frame-height f))
+    (message "default face font %s" (face-attribute 'default :font)))
+  nil)
+#+end_src
+
+*** provide textsize
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-textsize.el" :mkdirp yes
+(provide 'tony-emacs-textsize)
+#+end_src
+
+** ~pulsar.el~
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-pulsar.el" :mkdirp yes
+  (use-package pulsar
+  :ensure t
+  :bind
+  ( :map global-map
+    ("C-x l" . pulsar-pulse-line) ; overrides `count-lines-page'
+    ("C-x L" . pulsar-highlight-permanently-dwim)) ; or use `pulsar-highlight-temporarily-dwim'
+  :init
+  (pulsar-global-mode 1)
+  :config
+  (setq pulsar-delay 0.055)
+  (setq pulsar-iterations 5)
+  (setq pulsar-face 'pulsar-green)
+  (setq pulsar-region-face 'pulsar-yellow)
+  (setq pulsar-highlight-face 'pulsar-magenta))
+#+end_src
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-pulsar.el" :mkdirp yes
+(provide 'tony-emacs-pulsar)
+#+end_src
+
+** ~fonts.el~
+*** setup font family variables
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-fonts.el" :mkdirp yes
+(defvar my-linux-font "Aporetic Serif Mono")
+(defvar my-macos-font "Aporetic Serif Mono")
+
+(if (eq system-type 'darwin)
+    (defvar my-editor-font my-macos-font)
+  (defvar my-editor-font my-linux-font))
+
+(if (eq system-type 'darwin)
+    (progn
+      (defvar my-default-font my-editor-font)
+      (defvar my-variable-pitch-font "Aporetic Sans")
+      (defvar my-serif-font "Aporetic Sans"))
+  (progn
+    (defvar my-default-font my-editor-font)
+    (defvar my-variable-pitch-font "Aporetic Sans")
+    (defvar my-serif-font "Aporetic Sans")))
+#+end_src
+*** setup font size variables
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-fonts.el" :mkdirp yes
+(defun my-setup-linux-fonts ()
+  "Separate setups for fonts in WSL and regular GNU/Linux."
+  (if (getenv "WSL_DISTRO_NAME")
+      (setq
+       my-font-height 200
+       my-xxs-font-height 100
+       my-xs-font-height 125
+       my-small-font-height 150
+       my-medium-font-height 250
+       my-large-font-height 350
+       my-presentation-font-height 650)
+    (setq
+     my-font-height 200
+     my-xxs-font-height 100
+     my-xs-font-height 125
+     my-small-font-height 150
+     my-medium-font-height 250
+     my-large-font-height 350
+     my-presentation-font-height 650)))
+
+(if (eq system-type 'darwin)
+    (setq
+     my-font-height 200
+     my-xxs-font-height 100
+     my-xs-font-height 125
+     my-small-font-height 150
+     my-medium-font-height 250
+     my-large-font-height 350
+     my-presentation-font-height 650)
+
+  (my-setup-linux-fonts))
+#+end_src
+*** use and config fontaine
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-fonts.el" :mkdirp yes
+(use-package
+ fontaine
+ :ensure t
+ :init (fontaine-mode 1)
+ ;; Persist the latest font preset when closing/starting Emacs and
+ ;; while switching between themes.
+ :bind (("C-c f" . fontaine-set-preset) ("C-c F" . fontaine-toggle-preset))
+ :custom
+ (fontaine-latest-state-file
+  (locate-user-emacs-file "fontaine-latest-state.eld"))
+ (fontaine-presets
+  `((xxs :default-height ,my-xxs-font-height)
+    (xs :default-height ,my-xs-font-height)
+    (small :default-height ,my-small-font-height)
+    (regular) ; like this it uses all the fallback values and is named
+    ; `regular'
+    (medium :default-height ,my-medium-font-height)
+    (large :default-height ,my-large-font-height)
+    (presentation :default-height ,my-presentation-font-height)
+    (t
+     ;; I keep all properties for didactic purposes, but most can be omitted.
+     ;; See the fontaine manual for the technicalities:
+     ;; <https://protesilaos.com/emacs/fontaine>.
+     :default-family ,my-default-font
+     :default-weight regular
+     :default-height ,my-font-height
+
+     :fixed-pitch-family ,my-default-font ; falls back to :default-family
+     :fixed-pitch-weight nil ; falls back to :default-weight
+     :fixed-pitch-height 1.0 ;,(/ 1 1.1)
+
+     :fixed-pitch-serif-family nil ; falls back to :default-family
+     :fixed-pitch-serif-weight nil ; falls back to :default-weight
+     :fixed-pitch-serif-height 1.0
+
+     :variable-pitch-family ,my-variable-pitch-font
+     :variable-pitch-weight nil
+     :variable-pitch-height 1.0 ; 1.1
+
+     :mode-line-active-family nil ; falls back to :default-family
+     :mode-line-active-weight nil ; falls back to :default-weight
+     :mode-line-active-height 1.0
+
+     :mode-line-inactive-family nil ; falls back to :default-family
+     :mode-line-inactive-weight nil ; falls back to :default-weight
+     :mode-line-inactive-height 1.0
+
+     :header-line-family nil ; falls back to :default-family
+     :header-line-weight nil ; falls back to :default-weight
+     :header-line-height 1.0
+
+     :line-number-family nil ; falls back to :default-family
+     :line-number-weight nil ; falls back to :default-weight
+     :line-number-height 1.0
+
+     :tab-bar-family nil ; falls back to :default-family
+     :tab-bar-weight nil ; falls back to :default-weight
+     :tab-bar-height 1.0
+
+     :tab-line-family nil ; falls back to :default-family
+     :tab-line-weight nil ; falls back to :default-weight
+     :tab-line-height 1.0
+
+     :bold-family nil ; use whatever the underlying face has
+     :bold-weight nil
+
+     :italic-family nil
+     :italic-slant nil
+
+     :line-spacing nil)))
+
+ :config
+ ;; Set the last preset or fall back to desired style from `fontaine-presets'
+ ;; (the `regular' in this case).
+ (fontaine-set-preset (or (fontaine-restore-latest-preset) 'regular))
+ (with-eval-after-load 'pulsar
+   (add-hook 'fontaine-set-preset-hook #'pulsar-pulse-line)))
+#+end_src
+*** use and config show font
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-fonts.el" :mkdirp yes
+;;;; Show Font (preview fonts)
+;; Read the manual: <https://protesilaos.com/emacs/show-font>
+(use-package
+ show-font
+ :ensure t
+ :if (display-graphic-p)
+ :commands (show-font-select-preview show-font-list show-font-tabulated)
+ :config
+ ;; These are the defaults, but I keep them here for easier access.
+ (setq show-font-pangram 'prot) (setq show-font-character-sample "
+ABCDEFGHIJKLMNOPQRSTUVWXYZ
+abcdefghijklmnopqrstuvwxyz
+0123456789   !@#$¢%^&*~|
+`'\"‘’“”.,;:  ()[]{}—-_+=<>
+
+()[]{}<>«»‹› 6bB8&0ODdoa 1tiIlL|\/
+!ij c¢ 5$Ss 7Z2z 9gqp nmMNNMW uvvwWuuw
+x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
+")
+
+ (setq show-font-display-buffer-action-alist
+       '(display-buffer-full-frame)))
+#+end_src
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-fonts.el" :mkdirp yes
+(provide 'tony-emacs-fonts)
+#+end_src
+
+** ~nerd-icons.el~
+
+*** use and config nerd-icons
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-nerd-icons.el" :mkdirp yes
+(use-package
+ nerd-icons
+ :ensure t
+ :if (display-graphic-p)
+ :config (setq nerd-icons-font-family "Symbols Nerd Font"))
+#+end_src
+
+*** use and configure nerd-icons-dired
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-nerd-icons.el" :mkdirp yes
+(use-package
+ nerd-icons-dired
+ :ensure t
+ :after nerd-icons
+ :hook (dired-mode . nerd-icons-dired-mode))
+#+end_src
+
+*** use and configure nerd-icons-ibuffer
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-nerd-icons.el" :mkdirp yes
+(use-package
+ nerd-icons-ibuffer
+ :ensure t
+ :after nerd-icons
+ :hook (ibuffer-mode . nerd-icons-ibuffer-mode))
+#+end_src
+
+*** use and configure nerd-icons-corfu
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-nerd-icons.el" :mkdirp yes
+(use-package
+ nerd-icons-corfu
+ :ensure t
+ :after nerd-icons
+ :after corfu
+ :config
+ (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-nerd-icons.el" :mkdirp yes
+(provide 'tony-emacs-nerd-icons)
+#+end_src
+
+** ~vertico.el~
+
+*** use vertico and config
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-vertico.el" :mkdirp yes
+(use-package
+ vertico
+ :ensure t
+ :init (vertico-mode)
+ :bind (:map vertico-map ("C-j" . vertico-next) ("C-k" . vertico-previous))
+
+ ;; Different scroll margin
+ ;; (setq vertico-scroll-margin 0)
+
+ ;; Show more candidates
+ ;; (setq vertico-count 20)
+
+ ;; Grow and shrink the Vertico minibuffer
+ ;; (setq vertico-resize t)
+
+ ;; Optionally enable cycling for `vertico-next' and `vertico-previous'.
+ ;; (setq vertico-cycle t)
+ )
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-vertico.el" :mkdirp yes
+(provide 'tony-emacs-vertico)
+#+end_src
+
+** ~marginalia.el~
+*** use and config marginalia
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-marginalia.el" :mkdirp yes
+;; Enable rich annotations using the Marginalia package
+(use-package
+ marginalia
+ :ensure t
+ ;; Bind `marginalia-cycle' locally in the minibuffer.  To make the binding
+ ;; available in the *Completions* buffer, add it to the
+ ;; `completion-list-mode-map'.
+ :bind (:map minibuffer-local-map ("M-A" . marginalia-cycle))
+
+ ;; The :init section is always executed.
+ :init
+
+ ;; Marginalia must be activated in the :init section of use-package such that
+ ;; the mode gets enabled right away. Note that this forces loading the
+ ;; package.
+ (marginalia-mode))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-marginalia.el" :mkdirp yes
+(provide 'tony-emacs-marginalia)
+#+end_src
+
+** ~orderless.el~
+*** use and config orderless
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-orderless.el" :mkdirp yes
+(use-package
+ orderless
+ :ensure t
+ :init
+ ;; Configure a custom style dispatcher (see the Consult wiki)
+ ;; (setq orderless-style-dispatchers '(+orderless-consult-dispatch orderless-affix-dispatch)
+ ;;       orderless-component-separator #'orderless-escapable-split-on-space)
+ (setq
+  completion-styles '(orderless basic)
+  completion-category-defaults nil
+  completion-category-overrides '((file (styles partial-completion)))))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-orderless.el" :mkdirp yes
+(provide 'tony-emacs-orderless)
+#+end_src
+
+** ~consult.el~
+*** use and config consult
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-consult.el" :mkdirp yes
+  ;; Example configuration for Consult
+  (use-package
+   consult
+   :ensure t
+   ;; Replace bindings. Lazily loaded due by `use-package'.
+   :bind
+   ( ;; C-c bindings in `mode-specific-map'
+    ("C-c M-x" . consult-mode-command)
+    ("C-c h" . consult-history)
+    ("C-c k" . consult-kmacro)
+    ("C-c m" . consult-man)
+    ("C-c i" . consult-info)
+    ([remap Info-search] . consult-info)
+    ;; C-x bindings in `ctl-x-map'
+    ("C-x M-:" . consult-complex-command) ;; orig. repeat-complex-command
+    ("C-x b" . consult-buffer) ;; orig. switch-to-buffer
+    ("C-x 4 b" . consult-buffer-other-window) ;; orig. switch-to-buffer-other-window
+    ("C-x 5 b" . consult-buffer-other-frame) ;; orig. switch-to-buffer-other-frame
+    ("C-x t b" . consult-buffer-other-tab) ;; orig. switch-to-buffer-other-tab
+    ("C-x r b" . consult-bookmark) ;; orig. bookmark-jump
+    ("C-x p b" . consult-project-buffer) ;; orig. project-switch-to-buffer
+    ;; Custom M-# bindings for fast register access
+    ("M-#" . consult-register-load)
+    ("M-'" . consult-register-store) ;; orig. abbrev-prefix-mark (unrelated)
+    ("C-M-#" . consult-register)
+    ;; Other custom bindings
+    ("M-y" . consult-yank-pop) ;; orig. yank-pop
+    ;; M-g bindings in `goto-map'
+    ("M-g e" . consult-compile-error)
+    ("M-g f" . consult-flymake) ;; Alternative: consult-flycheck
+    ("M-g g" . consult-goto-line) ;; orig. goto-line
+    ("M-g M-g" . consult-goto-line) ;; orig. goto-line
+    ("M-g o" . consult-outline) ;; Alternative: consult-org-heading
+    ("M-g m" . consult-mark)
+    ("M-g k" . consult-global-mark)
+    ("M-g i" . consult-imenu)
+    ("M-g I" . consult-imenu-multi)
+    ;; M-s bindings in `search-map'
+    ("M-s d" . consult-find) ;; Alternative: consult-fd
+    ("M-s c" . consult-locate)
+    ("M-s g" . consult-grep)
+    ("M-s G" . consult-git-grep)
+    ("M-s r" . consult-ripgrep)
+    ("M-s l" . consult-line)
+    ("M-s L" . consult-line-multi)
+    ("M-s k" . consult-keep-lines)
+    ("M-s u" . consult-focus-lines)
+    ;; Isearch integration
+    ("M-s e" . consult-isearch-history)
+    :map
+    isearch-mode-map
+    ("M-e" . consult-isearch-history) ;; orig. isearch-edit-string
+    ("M-s e" . consult-isearch-history) ;; orig. isearch-edit-string
+    ("M-s l" . consult-line) ;; needed by consult-line to detect isearch
+    ("M-s L" . consult-line-multi) ;; needed by consult-line to detect isearch
+    ;; Minibuffer history
+    :map
+    minibuffer-local-map
+    ("M-s" . consult-history) ;; orig. next-matching-history-element
+    ("M-r" . consult-history)) ;; orig. previous-matching-history-element
+
+   ;; Enable automatic preview at point in the *Completions* buffer. This is
+   ;; relevant when you use the default completion UI.
+   :hook (completion-list-mode . consult-preview-at-point-mode)
+
+   ;; The :init configuration is always executed (Not lazy)
+   :init
+
+   ;; Optionally configure the register formatting. This improves the register
+   ;; preview for `consult-register', `consult-register-load',
+   ;; `consult-register-store' and the Emacs built-ins.
+   (setq
+    register-preview-delay 0.5
+    register-preview-function #'consult-register-format)
+
+   ;; Optionally tweak the register preview window.
+   ;; This adds thin lines, sorting and hides the mode line of the window.
+   (advice-add #'register-preview :override #'consult-register-window)
+
+   ;; Use Consult to select xref locations with preview
+   (setq
+    xref-show-xrefs-function #'consult-xref
+    xref-show-definitions-function #'consult-xref)
+
+   ;; Configure other variables and modes in the :config section,
+   ;; after lazily loading the package.
+   :config
+
+   ;; Optionally configure preview. The default value
+   ;; is 'any, such that any key triggers the preview.
+   ;; (setq consult-preview-key 'any)
+   ;; (setq consult-preview-key "M-.")
+   ;; (setq consult-preview-key '("S-<down>" "S-<up>"))
+   ;; For some commands and buffer sources it is useful to configure the
+   ;; :preview-key on a per-command basis using the `consult-customize' macro.
+   (consult-customize
+    consult-theme
+    :preview-key
+    '(:debounce 0.2 any)
+    consult-ripgrep
+    consult-git-grep
+    consult-grep
+    ;; consult-bookmark
+    ;; consult-recent-file
+    consult-xref
+    ;; consult--source-bookmark
+    ;; consult--source-file-register
+    ;; consult--source-recent-file
+    ;; consult--source-project-recent-file
+    ;; :preview-key "M-."
+    :preview-key '(:debounce 0.4 any))
+
+   ;; Optionally configure the narrowing key.
+   ;; Both < and C-+ work reasonably well.
+   (setq consult-narrow-key "<") ;; "C-+"
+
+   ;; Optionally make narrowing help available in the minibuffer.
+   ;; You may want to use `embark-prefix-help-command' or which-key instead.
+   ;; (define-key consult-narrow-map (vconcat consult-narrow-key "?") #'consult-narrow-help)
+
+   ;; By default `consult-project-function' uses `project-root' from project.el.
+   ;; Optionally configure a different project root function.
+   ;;;; 1. project.el (the default)
+   ;; (setq consult-project-function #'consult--default-project--function)
+   ;;;; 2. vc.el (vc-root-dir)
+   ;; (setq consult-project-function (lambda (_) (vc-root-dir)))
+   ;;;; 3. locate-dominating-file
+   ;; (setq consult-project-function (lambda (_) (locate-dominating-file "." ".git")))
+   ;;;; 4. projectile.el (projectile-project-root)
+   ;; (autoload 'projectile-project-root "projectile")
+   ;; (setq consult-project-function (lambda (_) (projectile-project-root)))
+   ;;;; 5. No project support
+   ;; (setq consult-project-function nil)
+   )
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-consult.el" :mkdirp yes
+(provide 'tony-emacs-consult)
+#+end_src
+
+** ~embark.el~
+*** use and config embark
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-embark.el" :mkdirp yes
+(use-package
+ embark
+ :ensure t
+
+ :bind
+ (("C-." . embark-act) ;; pick some comfortable binding
+  ("C-;" . embark-dwim) ;; good alternative: M-.
+  ("C-h B" . embark-bindings)) ;; alternative for `describe-bindings'
+
+ :init
+
+ ;; Optionally replace the key help with a completing-read interface
+ (setq prefix-help-command #'embark-prefix-help-command)
+
+ ;; Show the Embark target at point via Eldoc. You may adjust the
+ ;; Eldoc strategy, if you want to see the documentation from
+ ;; multiple providers. Beware that using this can be a little
+ ;; jarring since the message shown in the minibuffer can be more
+ ;; than one line, causing the modeline to move up and down:
+
+ ;; (add-hook 'eldoc-documentation-functions #'embark-eldoc-first-target)
+ ;; (setq eldoc-documentation-strategy #'eldoc-documentation-compose-eagerly)
+
+ :config
+
+ ;; Hide the mode line of the Embark live/completions buffers
+ (add-to-list
+  'display-buffer-alist
+  '("\\`\\*Embark Collect \\(Live\\|Completions\\)\\*"
+    nil
+    (window-parameters (mode-line-format . none)))))
+#+end_src
+
+*** use and config embark-consult
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-embark.el" :mkdirp yes
+;; Consult users will also want the embark-consult package.
+(use-package
+ embark-consult
+ :ensure t ; only need to install it, embark loads it after consult if found
+ :hook (embark-collect-mode . consult-preview-at-point-mode))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-embark.el" :mkdirp yes
+(provide 'tony-emacs-embark)
+#+end_src
+
+** ~diff-hl.el~
+
+*** use and configure diff-hl
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-diff-hl.el" :mkdirp yes
+(use-package
+ diff-hl
+ :ensure t
+ :init
+ (global-diff-hl-mode)
+ (diff-hl-flydiff-mode) ; update diff-hl on the fly
+ (add-hook 'dired-mode-hook 'diff-hl-dired-mode) ; show diff in dired
+ :hook
+ (magit-pre-refresh . diff-hl-magit-pre-refresh)
+ (magit-post-refresh . diff-hl-magit-post-refresh))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-diff-hl.el" :mkdirp yes
+(provide 'tony-emacs-diff-hl)
+#+end_src
+
+** ~magit.el~
+*** use and config magit
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-magit.el" :mkdirp yes
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;                MAGIT               ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(use-package
+ transient
+ :defer t
+ :ensure
+ (transient :type git :host github :repo "magit/transient")
+ :config (setq transient-show-popup 0.5))
+
+(use-package
+ magit
+ :ensure t
+ :bind
+ (:map
+  global-map ("C-c g" . magit-status)
+  :map magit-mode-map ("C-w" . nil) ("M-w" . nil))
+ :init (setq magit-define-global-key-bindings nil)
+ (setq magit-section-visibility-indicator
+       '(magit-fringe-bitmap> . magit-fringe-bitmapv))
+ :config (setq git-commit-summary-max-length 50)
+ ;; NOTE 2023-01-24: I used to also include `overlong-summary-line'
+ ;; in this list, but I realised I do not need it.  My summaries are
+ ;; always in check.  When I exceed the limit, it is for a good
+ ;; reason.
+ (setq git-commit-style-convention-checks '(non-empty-second-line))
+ (define-key magit-mode-map (kbd "x") #'magit-discard)
+ (setq magit-diff-refine-hunk t)
+
+ ;; Show icons for files in the Magit status and other buffers.
+ (with-eval-after-load 'magit
+   (setq magit-format-file-function #'magit-format-file-nerd-icons)))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-magit.el" :mkdirp yes
+(provide 'tony-emacs-magit)
+#+end_src
+
+** ~blamer.el~
+*** use and config blamer
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-blamer.el" :mkdirp yes
+(use-package
+ blamer
+ :ensure (:host github :repo "artawower/blamer.el")
+ :bind (("s-i" . blamer-show-commit-info))
+ :custom (blamer-idle-time 0.3) (blamer-min-offset 70)
+ :custom-face
+ (blamer-face
+  ((t :foreground "#7a88cf" :background nil :height 140 :italic t)))
+ :config (global-blamer-mode 1))
+#+end_src
+
+*** provide blamer
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-blamer.el" :mkdirp yes
+(provide 'tony-emacs-blamer)
+#+end_src
+
+** ~treesit.el~
+*** use and config treesit
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-treesit.el" :mkdirp yes
+(use-package
+ treesit
+ :mode
+ (("\\.component.html\\'" . ngxhtml-ts-mode)
+  ;;("\\.html\\'"  . html-ts-mode)
+  ("\\.js\\'" . typescript-ts-mode)
+  ("\\.mjs\\'" . typescript-ts-mode)
+  ("\\.mts\\'" . typescript-ts-mode)
+  ("\\.cjs\\'" . typescript-ts-mode)
+  ("\\.ts\\'" . typescript-ts-mode)
+  ("\\.jsx\\'" . tsx-ts-mode)
+  ("\\.json\\'" . json-ts-mode)
+  ("\\.Dockerfile\\'" . dockerfile-ts-mode)
+  ("\\.prisma\\'" . prisma-ts-mode)
+  ("\\.yaml\\'" . yaml-ts-mode)
+  ;; More modes defined here...
+  )
+ :preface
+ (defun tb/setup-install-grammars ()
+   "Install Tree-sitter grammars if they are absent."
+   (interactive)
+   (dolist
+       (grammar
+        '((css . ("https://github.com/tree-sitter/tree-sitter-css"))
+          (bash "https://github.com/tree-sitter/tree-sitter-bash")
+          (html "https://github.com/tree-sitter/tree-sitter-html")
+          (angular
+           "https://github.com/dlvandenberg/tree-sitter-angular")
+          (javascript
+           .
+           ("https://github.com/tree-sitter/tree-sitter-javascript"))
+          (json . ("https://github.com/tree-sitter/tree-sitter-json"))
+          (python
+           . ("https://github.com/tree-sitter/tree-sitter-python"))
+          (markdown
+           "https://github.com/ikatyang/tree-sitter-markdown")
+          (make "https://github.com/alemuller/tree-sitter-make")
+          (elisp "https://github.com/Wilfred/tree-sitter-elisp")
+          (cmake "https://github.com/uyha/tree-sitter-cmake")
+          (c "https://github.com/tree-sitter/tree-sitter-c")
+          (gdscript
+           "https://github.com/PrestonKnopp/tree-sitter-gdscript")
+          (cpp "https://github.com/tree-sitter/tree-sitter-cpp")
+          (toml
+           .
+           ("https://github.com/tree-sitter/tree-sitter-toml"
+            "v0.5.1"))
+          (tsx
+           .
+           ("https://github.com/tree-sitter/tree-sitter-typescript"
+            "v0.20.3"
+            "tsx/src"))
+          (typescript
+           .
+           ("https://github.com/tree-sitter/tree-sitter-typescript"
+            "v0.20.3"
+            "typescript/src"))
+          (yaml . ("https://github.com/ikatyang/tree-sitter-yaml"))
+          (prisma "https://github.com/victorhqc/tree-sitter-prisma")))
+     (add-to-list 'treesit-language-source-alist grammar)
+     ;; Only install `grammar' if we don't already have it
+     ;; installed. However, if you want to *update* a grammar then
+     ;; this obviously prevents that from happening.
+     (unless (treesit-language-available-p (car grammar))
+       (treesit-install-language-grammar (car grammar)))))
+
+ ;; Optional, but recommended. Tree-sitter enabled major modes are
+ ;; distinct from their ordinary counterparts.
+ ;;
+ ;; You can remap major modes with `major-mode-remap-alist'. Note
+ ;; that this does *not* extend to hooks! Make sure you migrate them
+ ;; also
+ (dolist (mapping
+          '((python-mode . python-ts-mode)
+            (css-mode . css-ts-mode)
+            (typescript-mode . typescript-ts-mode)
+            (js-mode . typescript-ts-mode)
+            (js2-mode . typescript-ts-mode)
+            (c-mode . c-ts-mode)
+            (c++-mode . c++-ts-mode)
+            (c-or-c++-mode . c-or-c++-ts-mode)
+            (bash-mode . bash-ts-mode)
+            (css-mode . css-ts-mode)
+            (json-mode . json-ts-mode)
+            (js-json-mode . json-ts-mode)
+            (sh-mode . bash-ts-mode)
+            (sh-base-mode . bash-ts-mode)))
+   (add-to-list 'major-mode-remap-alist mapping))
+ :config (tb/setup-install-grammars) (setq treesit-font-lock-level 6))
+
+(provide 'tony-emacs-treesit)
+#+end_src
+
+** ~linter.el~
+
+*** flycheck use and config
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-linter.el" :mkdirp yes
+(use-package
+ flycheck
+ :ensure t
+ :init (global-flycheck-mode)
+ :bind
+ (:map
+  flycheck-mode-map
+  ("M-n" . flycheck-next-error) ; optional but recommended error navigation
+  ("M-p" . flycheck-previous-error)))
+#+end_src
+
+*** editorconfig use and config
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-linter.el" :mkdirp yes
+(use-package editorconfig
+  :ensure t
+  :config (editorconfig-mode 1))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-linter.el" :mkdirp yes
+(provide 'tony-emacs-linter)
+#+end_src
+
+** ~spellchecker.el~
+- Arch dependencies: 
+#+begin_src sh
+  pacman -S hunspell hunspell-en_us pkgconf
+#+end_src
+-macOS dependencies:
+#+begin_src sh
+  brew install enchant hunspell
+#+end_src
+
+*** use and configure jinx
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-spellchecker.el" :mkdirp yes
+(use-package
+ jinx
+ :ensure t
+ :hook (emacs-startup . global-jinx-mode)
+ :bind (("M-$" . jinx-correct) ("C-M-$" . jinx-languages)))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-spellchecker.el" :mkdirp yes
+(provide 'tony-emacs-spellchecker)
+#+end_src
+
+** ~prettier.el~
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-prettier.el" :mkdirp yes
+;; auto-format different source code files extremely intelligently
+;; https://github.com/radian-software/apheleia
+(use-package elisp-autofmt :ensure t)
+
+(use-package
+ apheleia
+ :ensure t
+ :diminish
+ :config (apheleia-global-mode 1)
+
+ ;; Configure prettierd formatter
+ (setf (alist-get 'prettierd apheleia-formatters)
+       '("prettierd" "--stdin-filepath" filepath))
+ ;; Update mode associations to use prettierd instead of prettier
+ (setf (alist-get 'js-mode apheleia-mode-alist) 'prettierd)
+ (setf (alist-get 'js-ts-mode apheleia-mode-alist) 'prettierd)
+ (setf (alist-get 'typescript-mode apheleia-mode-alist) 'prettierd)
+ (setf (alist-get 'typescript-ts-mode apheleia-mode-alist) 'prettierd)
+ (setf (alist-get 'tsx-ts-mode apheleia-mode-alist) 'prettierd)
+ (setf (alist-get 'json-mode apheleia-mode-alist) 'prettierd)
+ (setf (alist-get 'json-ts-mode apheleia-mode-alist) 'prettierd)
+ (setf (alist-get 'css-mode apheleia-mode-alist) 'prettierd)
+ (setf (alist-get 'scss-mode apheleia-mode-alist) 'prettierd)
+ (setf (alist-get 'css-ts-mode apheleia-mode-alist) 'prettierd)
+ (setf (alist-get 'html-mode apheleia-mode-alist) 'prettierd)
+ (setf (alist-get 'web-mode apheleia-mode-alist) 'prettierd)
+ (setf (alist-get 'ngxhtml-ts-mode apheleia-mode-alist) 'prettierd)
+ (setf (alist-get 'emacs-lisp-mode apheleia-mode-alist)
+       'elisp-autofmt))
+
+(provide 'tony-emacs-prettier)
+#+end_src
+
+** ~lsp-biome.el~
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-lsp-biome.el" :mkdirp yes
+(use-package
+ lsp-biome
+ :after apheleia
+ :ensure (:host github :repo "cxa/lsp-biome"))
+(provide 'tony-emacs-lsp-biome)
+#+end_src
+
+** ~completion.el~
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-completion.el" :mkdirp yes
+;;;; Code Completion
+(use-package
+ corfu
+ :ensure t
+ ;; Optional customizations
+ :custom
+ (corfu-cycle t) ; Allows cycling through candidates
+ (corfu-auto t) ; Enable auto completion
+ (corfu-auto-prefix 2) ; Minimum length of prefix for completion
+ (corfu-auto-delay 0) ; No delay for completion
+ (corfu-popupinfo-delay '(0.5 . 0.2)) ; Automatically update info popup after that numver of seconds
+ (corfu-preview-current 'insert) ; insert previewed candidate
+ (corfu-preselect 'prompt)
+ (corfu-on-exact-match nil) ; Don't auto expand tempel snippets
+ ;; Optionally use TAB for cycling, default is `corfu-complete'.
+ :bind
+ (:map
+  corfu-map
+  ("M-SPC" . corfu-insert-separator)
+  ("TAB" . corfu-next)
+  ([tab] . corfu-next)
+  ("S-TAB" . corfu-previous)
+  ([backtab] . corfu-previous)
+  ("S-<return>" . corfu-insert)
+  ("RET" . corfu-insert))
+
+ :init (global-corfu-mode) (corfu-history-mode)
+ (corfu-popupinfo-mode) ; Popup completion info
+ :config
+ (add-hook 'eshell-mode-hook
+           (lambda ()
+             (setq-local
+              corfu-quit-at-boundary t
+              corfu-quit-no-match t
+              corfu-auto nil)
+             (corfu-mode))
+           nil t))
+(provide 'tony-emacs-completion)
+#+end_src
+
+** ~lsp-mode.el~
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-lsp-mode.el" :mkdirp yes
+    ;; taken from github.com/yolksys
+(use-package
+ lsp-mode
+ :diminish "LSP"
+ :ensure t
+ :hook
+ ((lsp-mode . lsp-diagnostics-mode)
+  (lsp-mode . lsp-enable-which-key-integration)
+  ((html-ts-mode typescript-ts-mode go-ts-mode js-ts-mode)
+   .
+   lsp-deferred))
+ :custom
+ (lsp-keymap-prefix "C-l") ; Prefix for LSP actions
+ (lsp-completion-provider :none) ; Using company as the provider
+ (lsp-diagnostics-provider :flycheck)
+ (lsp-session-file (locate-user-emacs-file ".lsp-session"))
+ (lsp-log-io nil) ; IMPORTANT! Use only for debugging! Drastically affects performance
+ (lsp-keep-workspace-alive nil) ; Close LSP server if all project buffers are closed
+ (lsp-idle-delay 0.5) ; Debounce timer for `after-change-function'
+ ;; core
+ (lsp-enable-xref nil) ; Use xref to find references
+ (lsp-auto-configure t) ; Used to decide between current active servers
+ (lsp-eldoc-enable-hover t) ; Display signature information in the echo area
+ (lsp-enable-dap-auto-configure t) ; Debug support
+ (lsp-enable-file-watchers nil)
+ (lsp-enable-folding nil) ; I disable folding since I use origami
+ (lsp-enable-imenu t)
+ (lsp-enable-indentation nil) ; I use prettier
+ (lsp-enable-links nil) ; No need since we have `browse-url'
+ (lsp-enable-on-type-formatting nil) ; Prettier handles this
+ (lsp-enable-suggest-server-download t) ; Useful prompt to download LSP providers
+ (lsp-enable-symbol-highlighting t) ; Shows usages of symbol at point in the current buffer
+ (lsp-enable-text-document-color nil) ; This is Treesitter's job
+
+ (lsp-ui-sideline-show-hover nil) ; Sideline used only for diagnostics
+ (lsp-ui-sideline-diagnostic-max-lines 20) ; 20 lines since typescript errors can be quite big
+ ;; completion
+ (lsp-completion-enable t)
+ (lsp-completion-enable-additional-text-edit t) ; Ex: auto-insert an import for a completion candidate
+ (lsp-enable-snippet t) ; Important to provide full JSX completion
+ (lsp-completion-show-kind t) ; Optional
+ ;; headerline
+ (lsp-headerline-breadcrumb-enable t) ; Optional, I like the breadcrumbs
+ (lsp-headerline-breadcrumb-enable-diagnostics t) ; make them red
+ (lsp-headerline-breadcrumb-enable-symbol-numbers nil)
+ (lsp-headerline-breadcrumb-icons-enable nil)
+ ;; modeline
+ (lsp-modeline-code-actions-enable nil) ; Modeline should be relatively clean
+ (lsp-modeline-diagnostics-enable t) ; Already supported through `flycheck'
+ (lsp-modeline-workspace-status-enable nil) ; Modeline displays "LSP" when lsp-mode is enabled
+ (lsp-signature-doc-lines 1) ; Don't raise the echo area. It's distracting
+ (lsp-ui-doc-use-childframe t) ; Show docs for symbol at point
+ (lsp-eldoc-render-all nil) ; This would be very useful if it would respect `lsp-signature-doc-lines', currently it's distracting
+ ;; lens
+ (lsp-lens-enable nil) ; Optional, I don't need it
+ ;; semantic
+ (lsp-semantic-tokens-enable nil) ; Related to highlighting, and we defer to treesitter
+
+ :preface
+ (defun lsp-booster--advice-json-parse (old-fn &rest args)
+   "Try to parse bytecode instead of json."
+   (or (when (equal (following-char) ?#)
+
+         (let ((bytecode (read (current-buffer))))
+           (when (byte-code-function-p bytecode)
+             (funcall bytecode))))
+       (apply old-fn args)))
+ (defun lsp-booster--advice-final-command (old-fn cmd &optional test?)
+   "Prepend emacs-lsp-booster command to lsp CMD."
+   (let ((orig-result (funcall old-fn cmd test?)))
+     (if (and
+          (not test?) ;; for check lsp-server-present?
+          (not (file-remote-p default-directory)) ;; see lsp-resolve-final-command, it would add extra shell wrapper
+          lsp-use-plists
+          (not (functionp 'json-rpc-connection)) ;; native json-rpc
+          (executable-find "emacs-lsp-booster"))
+         (progn
+           (message "Using emacs-lsp-booster for %s!" orig-result)
+           (cons "emacs-lsp-booster" orig-result))
+       orig-result)))
+ ;; Initiate https://github.com/blahgeek/emacs-lsp-booster for performance
+ (advice-add
+  (if (progn
+        (require 'json)
+        (fboundp 'json-parse-buffer))
+      'json-parse-buffer
+    'json-read)
+  :around #'lsp-booster--advice-json-parse)
+ (advice-add
+  'lsp-resolve-final-command
+  :around #'lsp-booster--advice-final-command)
+ ;;:init
+ ;;(setq lsp-use-plists t)
+ )
+
+(use-package
+ lsp-completion
+ :no-require
+ :hook ((lsp-mode . lsp-completion-mode)))
+
+(use-package
+ lsp-ui
+ :ensure t
+ :commands (lsp-ui-doc-show lsp-ui-doc-glance)
+ :bind (:map lsp-mode-map ("C-c C-d" . 'lsp-ui-doc-glance))
+ :after (lsp-mode)
+ :config
+ (setq
+  lsp-ui-doc-enable t
+  lsp-ui-doc-show-with-cursor nil ; Don't show doc when cursor is over symbol - too distracting
+  lsp-ui-doc-include-signature t ; Show signature
+  lsp-ui-doc-position 'at-point))
+
+
+;; init.el
+;;;; per https://github.com/emacs-lsp/lsp-mode#performance
+(setq read-process-output-max (* 10 1024 1024)) ;; 10mb
+(setq gc-cons-threshold 200000000)
+
+;;(add-to-list 'warning-suppress-log-types '(lsp-mode))
+;;(add-to-list 'warning-suppress-types '(lsp-mode))
+(provide 'tony-emacs-lsp-mode)
+#+end_src
+
+** ~lsp-treemacs.el~
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-lsp-treemacs.el" :mkdirp yes
+(use-package
+ lsp-treemacs
+ :ensure t
+ :commands lsp-treemacs-errors-list)
+(provide 'tony-emacs-lsp-treemacs)
+#+end_src
+
+** ~ngx.el~
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-ngx.el" :mkdirp yes
+;;; lsp-ngx.el --- description -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2020 emacs-lsp maintainers
+
+;; Author: emacs-lsp maintainers
+;; Keywords: lsp,
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; LSP Clients for the ngx Web application framework.
+
+;;; Code:
+
+
+(use-package ngxhtml-ts-mode)
+
+(add-hook 'ngxhtml-ts-mode-hook #'lsp-deferred)
+
+;;; for formatter
+;;(push '(prettier-ngxhtml . ( "apheleia-npx" "prettier" "--stdin-filepath" filepath
+;;"--parser=angular"
+;;(apheleia-formatters-js-indent "--use-tabs"
+;;"--tab-width")))
+;;apheleia-formatters)
+;;(push '(ngxhtml-ts-mode . prettier-ngxhtml)
+;;apheleia-mode-alist)
+;;; uncomment this to disable formater
+;;;(defun ngxhtml-setting-hooks ()
+;;;  (apheleia-mode -1))
+;;;(add-hook 'ngxhtml-ts-mode-hook #'ngxhtml-setting-hooks)
+
+;;;(defvar-local node-path (shell-command-to-string "which node"))
+(with-eval-after-load 'lsp-mode
+  ;;; ngx
+  (defgroup lsp-ngx nil
+    "ngx LSP client, provided by the ngx Language Service Server."
+    :group 'lsp-mode
+    :version "8.0.0"
+    :link '(url-link "https://github.com/ngx/vscode-ng-language-service"))
+
+  (defcustom lsp-clients-ngx-language-server-command nil
+    "The command that starts the ngx language server."
+    :group 'lsp-ngx
+    :type
+    '(choice
+      (string :tag "Single string value")
+      (repeat :tag "List of string values" string)))
+
+  (defcustom lsp-clients-ngx-node-get-prefix-command
+    "npm config get --global prefix"
+    "The shell command that returns the path of NodeJS's prefix.
+    Has no effects when `lsp-clients-ngx-language-server-command' is set."
+    :group 'lsp-ngx
+    :type 'string)
+
+  (defun lsp-client--ngx-start-loading (_workspace params)
+    (lsp--info "Started loading project %s" params))
+
+  (defun lsp-client--ngx-finished-loading (_workspace params)
+    (lsp--info "Finished loading project %s" params))
+
+  (lsp-register-client
+   (make-lsp-client
+    :new-connection
+    (lsp-stdio-connection
+     (lambda ()
+       (if lsp-clients-ngx-language-server-command
+           lsp-clients-ngx-language-server-command
+         (let ((node-modules-path
+                (f-join
+                 (string-trim
+                  (shell-command-to-string
+                   lsp-clients-ngx-node-get-prefix-command))
+                 (if (eq system-type 'windows-nt)
+                     "node_modules"
+                   "lib/node_modules"))))
+           ;; The shell command takes a significant time to run,
+           ;; so we "cache" its results after running once
+           (setq lsp-clients-ngx-language-server-command
+                 (list
+                  "ngserver"
+                  "--stdio"
+                  "--tsProbeLocations"
+                  node-modules-path
+                  "--ngProbeLocations"
+                  (f-join
+                   node-modules-path
+                   "@ngx/language-server/node_modules/")))
+           lsp-clients-ngx-language-server-command))))
+    :activation-fn
+
+    (lambda (&rest _args)
+      (and
+       (string-match-p "\\(\\.html\\|\\.ts\\)\\'" (buffer-file-name))
+       (lsp-workspace-root)
+       ;; Use 'or' to check for either 'angular.json' or the '.angular' directory
+       (or (file-exists-p
+            (f-join (lsp-workspace-root) "angular.json"))
+           (file-directory-p
+            (f-join (lsp-workspace-root) ".angular")))))
+    :priority -1
+    :notification-handlers
+    (ht
+     ("angular/projectLoadingStart" #'lsp-client--ngx-start-loading)
+     ("angular/projectLoadingFinish"
+      #'lsp-client--ngx-finished-loading)
+     ("angular/projectLanguageService" #'ignore))
+    :add-on? t
+    :server-id 'ngx-ls))
+
+
+  (lsp-consistency-check lsp-ngx)
+
+  ;;;
+  ;;;(with-eval-after-load 'lsp-mode
+  ;;;  (add-to-list 'lsp-language-id-configuration
+  ;;;               '(ngxhtml-ts-mode . "ngxhtml"))
+  ;;;
+  ;;;  (lsp-register-client
+  ;;;   (make-lsp-client :new-connection
+  ;;;                    (lsp-stdio-connection
+  ;;;                     '("node"
+  ;;;                       "/home/cyf/.nvm/versions/node/v23.8.0/lib/node_modules/@angular/language-server"
+  ;;;                       "--ngProbeLocations"
+  ;;;                       "/home/cyf/.nvm/versions/node/v23.8.0/lib/node_modules"
+  ;;;                       "--tsProbeLocations"
+  ;;;                       "/home/cyf/.nvm/versions/node/v23.8.0/lib/node_modules/"
+  ;;;                       "--stdio"))
+  ;;;                    :activation-fn (lsp-activate-on "ngxhtml")
+  ;;;                    :server-id 'ngxhtml-ls
+  ;;;		   :notification-handlers (ht ("angular/projectLoadingStart" #'ignore)
+  ;;;                                               ("angular/projectLoadingFinish" #'ignore)))))
+  )
+(provide 'tony-emacs-ngx)
+;;; tony-emacs-ngx.el ends here
+#+end_src
+
+** ~info-manuals.el~
+
+*** use and configure sicp
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-info-manuals.el" :mkdirp yes
+(use-package sicp :ensure t)
+#+end_src
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-info-manuals.el" :mkdirp yes
+(provide 'tony-emacs-info-manuals)
+#+end_src
+
+** ~copilot.el~
+GitHub Copilot inline completions via [[https://github.com/copilot-emacs/copilot.el][copilot-emacs/copilot.el]].
+Run ~M-x copilot-login~ once to authenticate with your GitHub account.
+
+*** use and config copilot with nerd-icons
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-copilot.el" :mkdirp yes
+;; copilot requires track-changes >= 1.4
+(use-package track-changes :ensure t)
+
+(use-package copilot
+  :ensure (:host github :repo "copilot-emacs/copilot.el")
+  :after track-changes
+  :hook (prog-mode . copilot-mode)
+  :bind
+  (:map copilot-completion-map
+        ("<tab>"   . copilot-accept-completion)
+        ("TAB"     . copilot-accept-completion)
+        ("C-TAB"   . copilot-accept-completion-by-word)
+        ("C-<tab>" . copilot-accept-completion-by-word)
+        ("M-n"     . copilot-next-completion)
+        ("M-p"     . copilot-previous-completion))
+  :custom
+  (copilot-idle-delay 0.5)
+  (copilot-max-char -1)
+  :config
+  ;; Show a nerd-icons Copilot indicator in the mode-line
+  (with-eval-after-load 'nerd-icons
+    (defun tony/copilot-mode-line-indicator ()
+      (when (bound-and-true-p copilot-mode)
+        (concat " " (nerd-icons-faicon "nf-fa-github") " Copilot")))
+    (add-to-list 'global-mode-string
+                 '(:eval (tony/copilot-mode-line-indicator)))))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-copilot.el" :mkdirp yes
+(provide 'tony-emacs-copilot)
+#+end_src
+
+** ~agent-shell.el~
+LLM agent shell via [[https://github.com/xenodium/agent-shell][xenodium/agent-shell]], using the Agent Client Protocol
+(ACP) to talk to Claude Code, Gemini CLI, and others directly from Emacs.
+
+Authentication uses your existing Claude Code login — no separate API key needed.
+Just ensure ~claude~ is installed and authenticated (~claude~ works in your terminal).
+
+System dependency — install the ACP bridge for Claude Code:
+#+begin_src sh
+npm install -g @anthropic-ai/claude-code-agent-acp
+#+end_src
+
+*** use and config agent-shell
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-agent-shell.el" :mkdirp yes
+(use-package shell-maker :ensure t)
+
+(use-package acp :ensure t :after shell-maker)
+
+(use-package agent-shell
+  :ensure t
+  :after (shell-maker acp)
+  :bind
+  (("C-c a a" . agent-shell)
+   ("C-c a c" . agent-shell-anthropic-start-claude-code))
+  :config
+  ;; Inherit the current Emacs process environment so the claude binary
+  ;; in PATH (and nvm, etc.) is visible to the agent subprocess
+  (setq agent-shell-anthropic-claude-environment
+        (agent-shell-make-environment-variables
+         :inherit-env t)))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-agent-shell.el" :mkdirp yes
+(provide 'tony-emacs-agent-shell)
+#+end_src
+
+** ~agent-shell-sidebar.el~
+Persistent project-aware sidebar for [[https://github.com/xenodium/agent-shell][agent-shell]], providing a treemacs-style
+side panel. Each project gets its own independent sidebar with separate state.
+
+Keybinds extend the existing =C-c a= prefix:
+- =C-c a a= → ~agent-shell~
+- =C-c a c= → ~agent-shell-anthropic-start-claude-code~
+- =C-c a s= → ~agent-shell-sidebar-toggle~
+- =C-c a f= → ~agent-shell-sidebar-toggle-focus~
+
+*** use and config agent-shell-sidebar
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-agent-shell-sidebar.el" :mkdirp yes
+(use-package agent-shell-sidebar
+  :ensure (:host github :repo "cmacrae/agent-shell-sidebar")
+  :bind
+  (("C-c a s" . agent-shell-sidebar-toggle)
+   ("C-c a f" . agent-shell-sidebar-toggle-focus))
+  :custom
+  (agent-shell-sidebar-width "25%")
+  (agent-shell-sidebar-minimum-width 80)
+  (agent-shell-sidebar-maximum-width "50%")
+  (agent-shell-sidebar-position 'right)
+  (agent-shell-sidebar-locked t)
+  (agent-shell-sidebar-default-config
+   (agent-shell-anthropic-make-claude-code-config)))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-agent-shell-sidebar.el" :mkdirp yes
+(provide 'tony-emacs-agent-shell-sidebar)
+#+end_src
