@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# Create a temporary file and ensure it is cleaned up on exit.
+TMPFILE=$(mktemp)
+trap 'rm -f -- "$TMPFILE"' EXIT
+
+# Run rate-mirrors and check its exit status.
+# The `&&` operator ensures the rest of the command only runs if the first part succeeds.
+if rate-mirrors --save="$TMPFILE" arch --max-delay=43200 --fetch-mirrors-timeout=120000; then
+    # Check if the temporary file is not empty using the `-s` test.
+    if [[ -s "$TMPFILE" ]]; then
+        echo "Successfully generated new mirror list."
+        # Use `sudo` just for the specific commands that need it.
+        # This prevents the script from running with unnecessary elevated privileges.
+        sudo mv /etc/pacman.d/mirrorlist-arch /etc/pacman.d/mirrorlist-arch-backup
+        sudo cp "$TMPFILE" /etc/pacman.d/mirrorlist-arch
+	# --- Add this line to set standard permissions (644) ---
+        sudo chmod 644 /etc/pacman.d/mirrorlist-arch
+        # -----------------------------------------------------
+        # Optional: Save a copy to your user's directory.
+        cp "$TMPFILE" ~/.local/artixinstall/mirrorlist-arch
+        chown tony ~/.local/artixinstall/mirrorlist-arch
+    else
+        echo "rate-mirrors ran successfully but produced an empty file. Keeping old mirrorlist."
+    fi
+else
+    # `rate-mirrors` command failed.
+    echo "rate-mirrors failed to execute. Keeping old mirrorlist."
+fi

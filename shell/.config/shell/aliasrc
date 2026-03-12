@@ -1,0 +1,42 @@
+#!/bin/sh
+
+# sudo not requred for usual system commands
+for command in mount umount sv pacman updatedb su shutdown poweroff reboot ; do
+	alias $command="sudo $command"
+done; unset command
+
+alias \
+	cp="cp -iv" \
+	mv="mv -iv" \
+	mkd="mkdir -pv" \
+
+alias \
+  	config='/usr/bin/git --git-dir=$HOME/.cfg/ --work-tree=$HOME' \
+  	configit='GIT_DIR=$HOME/.cfg GIT_WORK_TREE=$HOME nvim -c MagitOnly' \
+  	vc='GIT_DIR=$HOME/.cfg GIT_WORK_TREE=$HOME nvim' \
+	ls="ls -hN --color=auto --group-directories-first" \
+	grep="grep --color=auto" \
+	diff="diff --color=auto" \
+	ccat="highlight --out-format=ansi" \
+	ip="ip -color=auto" \
+  	lf="lfub" \
+
+alias \
+	g="git" \
+	v="nvim" \
+	trem="transmission-remote" \
+	tmux="tmux -f ~/.tmux.conf" \
+	ts="tmux new-session -s" \
+	tksv="tmux kill-server" \
+	ta="tmux attach -t" \
+	tls="tmux ls" \
+	pbcopy='xsel --clipboard --input' \
+	pbpaste='xsel --clipboard --output' \
+	vrc="nvim $HOME/.config/nvim" \
+	zrc="nvim $ZDOTDIR/.zshrc" \
+	arc="nvim $HOME/.config/shell/aliasrc" \
+	axic="nvim $HOME/.local/artixinstall/notesOnDuo.md" \
+	pxic="nvim $HOME/.local/artixinstall/pacs.csv" \
+	gpa="git apply --reject --whitespace=fix" \
+	gcp="git cherry-pick" \
+	magit="nvim -c MagitOnly" \

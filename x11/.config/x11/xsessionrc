@@ -1,0 +1,4 @@
+#!/bin/sh
+# monarr & xrandrpid=$!
+
+#[ -n "$xrandrpid" ] && wait "$xrandrpid"

@@ -1,0 +1,17 @@
+#!/bin/sh
+
+# Called on start up to remap keys
+
+# Increase key speed via a rate change
+xset r rate 300 50
+
+[[ $(hostname) == *"desktop"* ]] && ISDESKTOP=true || ISDESKTOP=false;
+[[ $(hostname) == *"laptop"* ]] && ISLAPTOP=true || ISLAPTOP=false;
+
+if $ISLAPTOP; then
+	# sets left control to hyper, and caps lock to control when held
+	setxkbmap -device `xinput -list | grep AT | sed 's/.*id=\(.*\)\t.*/\1/'` -option 'ctrl:hyper_capscontrol'
+	
+	# When ctrl is pressed just once, treat as escape
+	killall xcape 2>/dev/null ; xcape -e 'Control_L=Escape'
+fi

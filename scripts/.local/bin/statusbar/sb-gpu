@@ -1,0 +1,3 @@
+#!/bin/sh
+
+sensors | awk '/GPU/ {print "📼🌡️ " $2}'

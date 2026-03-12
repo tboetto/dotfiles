@@ -1,0 +1,7 @@
+#!/bin/sh
+echo $USER
+echo 'hello again world'
+FILE= $(find . -maxdepth 1 -name "*$1*")
+echo ${FILE:2}
+mkvmerge -o $1 ${FILE:2}
+

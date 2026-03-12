@@ -1,0 +1,28 @@
+#!/bin/sh
+
+[[ $(hostname) == *"desktop"* ]] && ISDESKTOP=true || ISDESKTOP=false;
+[[ $(hostname) == *"laptop"* ]] && ISLAPTOP=true || ISLAPTOP=false;
+
+xrandr --auto &
+xrandr --dpi 220 &
+
+dwmblocks &
+
+rbg &
+
+pipewire &
+
+if $ISLAPTOP; then
+	remaps &
+elif $ISDESKTOP; then
+	remaps &
+	trimonarr &
+fi
+
+autostart="xcompmgr dunst unclutter"
+
+for program in $autostart; do
+	pidof -s "$program" || "$program" &
+done >/dev/null 2>&1
+
+pkill -SIGUSR1 dwmblocks

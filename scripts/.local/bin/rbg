@@ -1,0 +1,10 @@
+#!/bin/sh
+
+[[ $(hostname) == *"desktop"* ]] && ISDESKTOP=true || ISDESKTOP=false;
+[[ $(hostname) == *"laptop"* ]] && ISLAPTOP=true || ISLAPTOP=false;
+
+if $ISLAPTOP; then
+	feh --recursive --bg-fill --randomize $HOME/Pictures/bg/papes/naturepapes
+elif $ISDESKTOP; then
+	feh --recursive --bg-fill --randomize $HOME/media/hdd1/Pictures/bg/papes/naturepapes
+fi

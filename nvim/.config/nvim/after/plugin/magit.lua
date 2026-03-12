@@ -1,0 +1,1 @@
+vim.g.magit_discard_untracked_do_delete=1
