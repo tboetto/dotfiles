@@ -1,8 +1,7 @@
 (use-package
  treesit
  :mode
- (("\\.component.html\\'" . ngxhtml-ts-mode)
-  ;;("\\.html\\'"  . html-ts-mode)
+ (("\\.html\\'" . ngxhtml-ts-mode)
   ("\\.js\\'" . typescript-ts-mode)
   ("\\.mjs\\'" . typescript-ts-mode)
   ("\\.mts\\'" . typescript-ts-mode)

@@ -1,0 +1,72 @@
+#+title: dotfiles
+#+author: Tony Boetto
+
+Personal dotfiles managed with [[https://www.gnu.org/software/stow/][GNU Stow]].
+
+* Packages
+
+| Package   | Description                                        |
+|-----------+----------------------------------------------------|
+| =audio=   | PipeWire and PulseAudio daemon configuration       |
+| =desktop= | Browser flags and fontconfig                       |
+| =emacs=   | GNU Emacs configuration (literate, modular)        |
+| =music=   | MPD and ncmpcpp configuration                      |
+| =nvim=    | Neovim configuration                               |
+| =scripts= | Utility scripts and statusbar scripts              |
+| =shell=   | Zsh, profile, aliases, and shell bookmarks         |
+| =x11=     | X initialization, xprofile, xresources, xsession  |
+
+* Installation
+
+** Prerequisites
+
+*Arch Linux*
+
+#+begin_src sh
+sudo pacman -S stow
+#+end_src
+
+*macOS*
+
+#+begin_src sh
+brew install stow
+#+end_src
+
+** Deploy a single package
+
+#+begin_src sh
+stow emacs
+#+end_src
+
+** Deploy all packages
+
+#+begin_src sh
+stow audio desktop emacs music nvim scripts shell x11
+#+end_src
+
+Stow creates symlinks from =~= into the corresponding package directory.
+Run from the root of this repository (i.e. =~/dotfiles=).
+
+* Package notes
+
+** emacs
+
+Literate configuration lives in =emacs/.config/emacs/my-init.org=. Feature
+modules are loaded from =tony-emacs-modules/= and custom lisp from
+=tony-lisp/=. Uses [[https://github.com/progfolio/elpaca][Elpaca]] as the package manager.
+
+** nvim
+
+Entry point is =nvim/.config/nvim/init.lua=. Uses [[https://github.com/wbthomason/packer.nvim][packer.nvim]] for plugins.
+
+** scripts
+
+Scripts are symlinked into =~/.local/bin/=. Statusbar scripts live under
+=statusbar/= and are designed for use with =dwmblocks= or similar.
+
+** shell
+
+Zsh config is at =~/.config/zsh/.zshrc=. Aliases are in
+=~/.config/shell/aliasrc=. The =XDG_CONFIG_HOME= layout requires
+=ZDOTDIR=$HOME/.config/zsh= to be set in =~/.zshenv= (or equivalent).
+

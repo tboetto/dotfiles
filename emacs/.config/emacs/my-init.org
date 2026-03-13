@@ -601,7 +601,7 @@ config
 
 (if (treesit-ready-p 'ngxhtml)
     (add-to-list
-     'auto-mode-alist '("\\.component.html\\'" . ngxhtml-ts-mode)))
+     'auto-mode-alist '("\\.html\\'" . ngxhtml-ts-mode)))
 
 (provide 'ngxhtml-ts-mode)
 
@@ -2069,8 +2069,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 (use-package
  treesit
  :mode
- (("\\.component.html\\'" . ngxhtml-ts-mode)
-  ;;("\\.html\\'"  . html-ts-mode)
+ (("\\.html\\'" . ngxhtml-ts-mode)
   ("\\.js\\'" . typescript-ts-mode)
   ("\\.mjs\\'" . typescript-ts-mode)
   ("\\.mts\\'" . typescript-ts-mode)
@@ -2606,7 +2605,8 @@ Run ~M-x copilot-login~ once to authenticate with your GitHub account.
 (use-package copilot
   :ensure (:host github :repo "copilot-emacs/copilot.el")
   :after track-changes
-  :hook (prog-mode . copilot-mode)
+  :hook ((prog-mode . copilot-mode)
+         (ngxhtml-ts-mode . copilot-mode))
   :bind
   (:map copilot-completion-map
         ("<tab>"   . copilot-accept-completion)
@@ -2619,6 +2619,11 @@ Run ~M-x copilot-login~ once to authenticate with your GitHub account.
   (copilot-idle-delay 0.5)
   (copilot-max-char -1)
   :config
+  ;; Teach copilot the indentation variable for ngxhtml-ts-mode
+  (add-to-list 'copilot-indentation-alist
+               '(ngxhtml-ts-mode ngxhtml-ts-mode-indent-offset))
+  (add-to-list 'copilot-indentation-alist
+               '(mhtml-mode sgml-basic-offset))
   ;; Show a nerd-icons Copilot indicator in the mode-line
   (with-eval-after-load 'nerd-icons
     (defun tony/copilot-mode-line-indicator ()
@@ -2640,9 +2645,10 @@ LLM agent shell via [[https://github.com/xenodium/agent-shell][xenodium/agent-sh
 Authentication uses your existing Claude Code login — no separate API key needed.
 Just ensure ~claude~ is installed and authenticated (~claude~ works in your terminal).
 
-System dependency — install the ACP bridge for Claude Code:
+System dependencies — install the ACP bridges:
 #+begin_src sh
-npm install -g @anthropic-ai/claude-code-agent-acp
+pnpm install -g @anthropic-ai/claude-code-agent-acp
+pnpm install -g @blowmage/cursor-agent-acp
 #+end_src
 
 *** use and config agent-shell
@@ -2656,11 +2662,16 @@ npm install -g @anthropic-ai/claude-code-agent-acp
   :after (shell-maker acp)
   :bind
   (("C-c a a" . agent-shell)
-   ("C-c a c" . agent-shell-anthropic-start-claude-code))
+   ("C-c a c" . agent-shell-anthropic-start-claude-code)
+   ("C-c a u" . agent-shell-cursor-start-agent))
   :config
   ;; Inherit the current Emacs process environment so the claude binary
   ;; in PATH (and nvm, etc.) is visible to the agent subprocess
   (setq agent-shell-anthropic-claude-environment
+        (agent-shell-make-environment-variables
+         :inherit-env t))
+  ;; Inherit env for cursor-agent-acp so the cursor binary is visible
+  (setq agent-shell-cursor-environment
         (agent-shell-make-environment-variables
          :inherit-env t)))
 #+end_src
@@ -2677,6 +2688,7 @@ side panel. Each project gets its own independent sidebar with separate state.
 Keybinds extend the existing =C-c a= prefix:
 - =C-c a a= → ~agent-shell~
 - =C-c a c= → ~agent-shell-anthropic-start-claude-code~
+- =C-c a u= → ~agent-shell-cursor-start-agent~
 - =C-c a s= → ~agent-shell-sidebar-toggle~
 - =C-c a f= → ~agent-shell-sidebar-toggle-focus~
 

@@ -271,7 +271,7 @@
 
 (if (treesit-ready-p 'ngxhtml)
     (add-to-list
-     'auto-mode-alist '("\\.component.html\\'" . ngxhtml-ts-mode)))
+     'auto-mode-alist '("\\.html\\'" . ngxhtml-ts-mode)))
 
 (provide 'ngxhtml-ts-mode)
 

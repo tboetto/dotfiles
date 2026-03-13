@@ -4,7 +4,8 @@
 (use-package copilot
   :ensure (:host github :repo "copilot-emacs/copilot.el")
   :after track-changes
-  :hook (prog-mode . copilot-mode)
+  :hook ((prog-mode . copilot-mode)
+         (ngxhtml-ts-mode . copilot-mode))
   :bind
   (:map copilot-completion-map
         ("<tab>"   . copilot-accept-completion)
@@ -17,6 +18,11 @@
   (copilot-idle-delay 0.5)
   (copilot-max-char -1)
   :config
+  ;; Teach copilot the indentation variable for ngxhtml-ts-mode
+  (add-to-list 'copilot-indentation-alist
+               '(ngxhtml-ts-mode ngxhtml-ts-mode-indent-offset))
+  (add-to-list 'copilot-indentation-alist
+               '(mhtml-mode sgml-basic-offset))
   ;; Show a nerd-icons Copilot indicator in the mode-line
   (with-eval-after-load 'nerd-icons
     (defun tony/copilot-mode-line-indicator ()
