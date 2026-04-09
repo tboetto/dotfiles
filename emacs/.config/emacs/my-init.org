@@ -685,12 +685,6 @@ config
 
 **** paredit
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-languages.el" :mkdirp yes
-(use-package
- paredit
- :ensure t
- :hook
- ;; Use the :hook keyword for modern use-package syntax
- (racket-mode-hook . paredit-mode))
 #+end_src
 
 *** provide module
@@ -2483,7 +2477,7 @@ Falls back to the global n-managed node_modules."
                        project-nm
                      global-nm))
          (ng-probe (if (and project-nm
-                            (file-directory-p (expand-file-name "@angular/core" project-nm)))
+                            (file-directory-p (expand-file-name "@angular/language-service" project-nm)))
                        project-nm
                      (expand-file-name "@angular/language-server/node_modules" global-nm))))
     (list "ngserver" "--stdio"

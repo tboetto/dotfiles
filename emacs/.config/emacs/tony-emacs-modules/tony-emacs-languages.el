@@ -28,11 +28,6 @@
  :ensure t
  :config (add-to-list 'org-babel-load-languages '(racket . t)))
 
-(use-package
- paredit
- :ensure t
- :hook
- ;; Use the :hook keyword for modern use-package syntax
- (racket-mode-hook . paredit-mode))
+
 
 (provide 'tony-emacs-languages)

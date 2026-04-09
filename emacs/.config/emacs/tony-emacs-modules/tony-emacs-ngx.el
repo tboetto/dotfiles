@@ -35,7 +35,7 @@ Falls back to the global n-managed node_modules."
                        project-nm
                      global-nm))
          (ng-probe (if (and project-nm
-                            (file-directory-p (expand-file-name "@angular/core" project-nm)))
+                            (file-directory-p (expand-file-name "@angular/language-service" project-nm)))
                        project-nm
                      (expand-file-name "@angular/language-server/node_modules" global-nm))))
     (list "ngserver" "--stdio"
