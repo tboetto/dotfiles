@@ -55,6 +55,8 @@
  (lsp-lens-enable nil) ; Optional, I don't need it
  ;; semantic
  (lsp-semantic-tokens-enable nil) ; Related to highlighting, and we defer to treesitter
+ ;; Use project-local tsserver.js so ts-ls respects the project's tsconfig (e.g. "module": "preserve")
+ (lsp-clients-typescript-prefer-use-project-ts-server t)
 
  :preface
  (defun lsp-booster--advice-json-parse (old-fn &rest args)
@@ -119,4 +121,5 @@
 
 ;;(add-to-list 'warning-suppress-log-types '(lsp-mode))
 ;;(add-to-list 'warning-suppress-types '(lsp-mode))
+
 (provide 'tony-emacs-lsp-mode)

@@ -37,7 +37,9 @@
 (use-package org-modern-indent
   :ensure (:host github :repo "jdtsmith/org-modern-indent")
   :hook
-  (org-mode . org-modern-indent-mode))
+  (org-mode . (lambda ()
+                (org-indent-mode 1)
+                (org-modern-indent-mode 1))))
 
 (use-package org-appear :ensure t :hook (org-mode . org-appear-mode))
 (setq org-appear-trigger 'always)

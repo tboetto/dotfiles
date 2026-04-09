@@ -82,6 +82,15 @@
    '("'" . repeat)
    '("<escape>" . ignore)))
 
-(use-package meow :ensure t :config (meow-setup) (meow-global-mode 1))
+(use-package meow
+  :ensure t
+  :config
+  (meow-setup)
+  (dolist (entry '((messages-buffer-mode . normal)
+                   (special-mode . normal)
+                   (view-mode . normal)
+                   (magit-mode . motion)))
+    (add-to-list 'meow-mode-state-list entry))
+  (meow-global-mode 1))
 
 (provide 'tony-emacs-meow)

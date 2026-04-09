@@ -757,7 +757,9 @@ Setup org mode basics:
 (use-package org-modern-indent
   :ensure (:host github :repo "jdtsmith/org-modern-indent")
   :hook
-  (org-mode . org-modern-indent-mode))
+  (org-mode . (lambda ()
+                (org-indent-mode 1)
+                (org-modern-indent-mode 1))))
 #+end_src
 
 *** org appear set up
@@ -1175,7 +1177,16 @@ Display number of matches in modeline when searching
 
 *** start up meow package
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-meow.el" :mkdirp yes
-(use-package meow :ensure t :config (meow-setup) (meow-global-mode 1))
+(use-package meow
+  :ensure t
+  :config
+  (meow-setup)
+  (dolist (entry '((messages-buffer-mode . normal)
+                   (special-mode . normal)
+                   (view-mode . normal)
+                   (magit-mode . motion)))
+    (add-to-list 'meow-mode-state-list entry))
+  (meow-global-mode 1))
 #+end_src
 
 *** provide module
@@ -2354,6 +2365,8 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
  (lsp-lens-enable nil) ; Optional, I don't need it
  ;; semantic
  (lsp-semantic-tokens-enable nil) ; Related to highlighting, and we defer to treesitter
+ ;; Use project-local tsserver.js so ts-ls respects the project's tsconfig (e.g. "module": "preserve")
+ (lsp-clients-typescript-prefer-use-project-ts-server t)
 
  :preface
  (defun lsp-booster--advice-json-parse (old-fn &rest args)
@@ -2418,6 +2431,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 
 ;;(add-to-list 'warning-suppress-log-types '(lsp-mode))
 ;;(add-to-list 'warning-suppress-types '(lsp-mode))
+
 (provide 'tony-emacs-lsp-mode)
 #+end_src
 
@@ -2432,32 +2446,9 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 
 ** ~ngx.el~
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-ngx.el" :mkdirp yes
-;;; lsp-ngx.el --- description -*- lexical-binding: t; -*-
-
-;; Copyright (C) 2020 emacs-lsp maintainers
-
-;; Author: emacs-lsp maintainers
-;; Keywords: lsp,
-
-;; This program is free software; you can redistribute it and/or modify
-;; it under the terms of the GNU General Public License as published by
-;; the Free Software Foundation, either version 3 of the License, or
-;; (at your option) any later version.
-
-;; This program is distributed in the hope that it will be useful,
-;; but WITHOUT ANY WARRANTY; without even the implied warranty of
-;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-;; GNU General Public License for more details.
-
-;; You should have received a copy of the GNU General Public License
-;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-;;; Commentary:
-
-;; LSP Clients for the ngx Web application framework.
+;;; tony-emacs-ngx.el --- Angular LSP + ngxhtml-ts-mode config -*- lexical-binding: t; -*-
 
 ;;; Code:
-
 
 (use-package ngxhtml-ts-mode)
 
@@ -2476,108 +2467,50 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 ;;;  (apheleia-mode -1))
 ;;;(add-hook 'ngxhtml-ts-mode-hook #'ngxhtml-setting-hooks)
 
-;;;(defvar-local node-path (shell-command-to-string "which node"))
-(with-eval-after-load 'lsp-mode
-  ;;; ngx
-  (defgroup lsp-ngx nil
-    "ngx LSP client, provided by the ngx Language Service Server."
-    :group 'lsp-mode
-    :version "8.0.0"
-    :link '(url-link "https://github.com/ngx/vscode-ng-language-service"))
+(defun tony/angular-ls-command ()
+  "Build ngserver command using project-local node_modules when available.
+Uses project node_modules for --tsProbeLocations and --ngProbeLocations so
+ngserver loads the project's Angular/TypeScript versions (like VSCode does).
+Falls back to the global n-managed node_modules."
+  (let* ((root (lsp-workspace-root))
+         (project-nm (and root (expand-file-name "node_modules" root)))
+         (global-nm (expand-file-name
+                     "lib/node_modules"
+                     (string-trim (shell-command-to-string
+                                   "dirname $(dirname $(which ngserver))"))))
+         (ts-probe (if (and project-nm
+                            (file-directory-p (expand-file-name "typescript" project-nm)))
+                       project-nm
+                     global-nm))
+         (ng-probe (if (and project-nm
+                            (file-directory-p (expand-file-name "@angular/core" project-nm)))
+                       project-nm
+                     (expand-file-name "@angular/language-server/node_modules" global-nm))))
+    (list "ngserver" "--stdio"
+          "--tsProbeLocations" ts-probe
+          "--ngProbeLocations" ng-probe)))
 
-  (defcustom lsp-clients-ngx-language-server-command nil
-    "The command that starts the ngx language server."
-    :group 'lsp-ngx
-    :type
-    '(choice
-      (string :tag "Single string value")
-      (repeat :tag "List of string values" string)))
-
-  (defcustom lsp-clients-ngx-node-get-prefix-command
-    "npm config get --global prefix"
-    "The shell command that returns the path of NodeJS's prefix.
-    Has no effects when `lsp-clients-ngx-language-server-command' is set."
-    :group 'lsp-ngx
-    :type 'string)
-
-  (defun lsp-client--ngx-start-loading (_workspace params)
-    (lsp--info "Started loading project %s" params))
-
-  (defun lsp-client--ngx-finished-loading (_workspace params)
-    (lsp--info "Finished loading project %s" params))
-
+;; Override angular-ls after lsp-angular loads to use project-local probe locations.
+;; The built-in angular-ls caches a global path on first use; our version recomputes
+;; per workspace so each project gets its own Angular/TypeScript versions.
+(with-eval-after-load 'lsp-angular
   (lsp-register-client
    (make-lsp-client
-    :new-connection
-    (lsp-stdio-connection
-     (lambda ()
-       (if lsp-clients-ngx-language-server-command
-           lsp-clients-ngx-language-server-command
-         (let ((node-modules-path
-                (f-join
-                 (string-trim
-                  (shell-command-to-string
-                   lsp-clients-ngx-node-get-prefix-command))
-                 (if (eq system-type 'windows-nt)
-                     "node_modules"
-                   "lib/node_modules"))))
-           ;; The shell command takes a significant time to run,
-           ;; so we "cache" its results after running once
-           (setq lsp-clients-ngx-language-server-command
-                 (list
-                  "ngserver"
-                  "--stdio"
-                  "--tsProbeLocations"
-                  node-modules-path
-                  "--ngProbeLocations"
-                  (f-join
-                   node-modules-path
-                   "@ngx/language-server/node_modules/")))
-           lsp-clients-ngx-language-server-command))))
+    :new-connection (lsp-stdio-connection #'tony/angular-ls-command)
     :activation-fn
-
     (lambda (&rest _args)
-      (and
-       (string-match-p "\\(\\.html\\|\\.ts\\)\\'" (buffer-file-name))
-       (lsp-workspace-root)
-       ;; Use 'or' to check for either 'angular.json' or the '.angular' directory
-       (or (file-exists-p
-            (f-join (lsp-workspace-root) "angular.json"))
-           (file-directory-p
-            (f-join (lsp-workspace-root) ".angular")))))
+      (and (string-match-p "\\(\\.html\\|\\.ts\\)\\'" (buffer-file-name))
+           (lsp-workspace-root)
+           (or (file-exists-p (f-join (lsp-workspace-root) "angular.json"))
+               (file-directory-p (f-join (lsp-workspace-root) ".angular")))))
     :priority -1
     :notification-handlers
-    (ht
-     ("angular/projectLoadingStart" #'lsp-client--ngx-start-loading)
-     ("angular/projectLoadingFinish"
-      #'lsp-client--ngx-finished-loading)
-     ("angular/projectLanguageService" #'ignore))
+    (ht ("angular/projectLoadingStart" #'ignore)
+        ("angular/projectLoadingFinish" #'ignore)
+        ("angular/projectLanguageService" #'ignore))
     :add-on? t
-    :server-id 'ngx-ls))
+    :server-id 'angular-ls)))
 
-
-  (lsp-consistency-check lsp-ngx)
-
-  ;;;
-  ;;;(with-eval-after-load 'lsp-mode
-  ;;;  (add-to-list 'lsp-language-id-configuration
-  ;;;               '(ngxhtml-ts-mode . "ngxhtml"))
-  ;;;
-  ;;;  (lsp-register-client
-  ;;;   (make-lsp-client :new-connection
-  ;;;                    (lsp-stdio-connection
-  ;;;                     '("node"
-  ;;;                       "/home/cyf/.nvm/versions/node/v23.8.0/lib/node_modules/@angular/language-server"
-  ;;;                       "--ngProbeLocations"
-  ;;;                       "/home/cyf/.nvm/versions/node/v23.8.0/lib/node_modules"
-  ;;;                       "--tsProbeLocations"
-  ;;;                       "/home/cyf/.nvm/versions/node/v23.8.0/lib/node_modules/"
-  ;;;                       "--stdio"))
-  ;;;                    :activation-fn (lsp-activate-on "ngxhtml")
-  ;;;                    :server-id 'ngxhtml-ls
-  ;;;		   :notification-handlers (ht ("angular/projectLoadingStart" #'ignore)
-  ;;;                                               ("angular/projectLoadingFinish" #'ignore)))))
-  )
 (provide 'tony-emacs-ngx)
 ;;; tony-emacs-ngx.el ends here
 #+end_src
@@ -2653,27 +2586,29 @@ pnpm install -g @blowmage/cursor-agent-acp
 
 *** use and config agent-shell
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-agent-shell.el" :mkdirp yes
-(use-package shell-maker :ensure t)
+  (use-package shell-maker :ensure t)
 
-(use-package acp :ensure t :after shell-maker)
+  (use-package acp :ensure t :after shell-maker)
 
-(use-package agent-shell
-  :ensure t
-  :after (shell-maker acp)
-  :bind
-  (("C-c a a" . agent-shell)
-   ("C-c a c" . agent-shell-anthropic-start-claude-code)
-   ("C-c a u" . agent-shell-cursor-start-agent))
-  :config
-  ;; Inherit the current Emacs process environment so the claude binary
-  ;; in PATH (and nvm, etc.) is visible to the agent subprocess
-  (setq agent-shell-anthropic-claude-environment
-        (agent-shell-make-environment-variables
-         :inherit-env t))
-  ;; Inherit env for cursor-agent-acp so the cursor binary is visible
-  (setq agent-shell-cursor-environment
-        (agent-shell-make-environment-variables
-         :inherit-env t)))
+  (use-package agent-shell
+    :ensure t
+    :after (shell-maker acp)
+    :bind
+    (("C-c a a" . agent-shell)
+     ("C-c a c" . agent-shell-anthropic-start-claude-code)
+     ("C-c a u" . agent-shell-cursor-start-agent))
+    :config
+    ;; Inherit the current Emacs process environment so the claude binary
+    ;; in PATH (and nvm, etc.) is visible to the agent subprocess
+    (setq agent-shell-anthropic-claude-environment
+          (agent-shell-make-environment-variables
+           :inherit-env t))
+    ;; Inherit env for cursor-agent-acp so the cursor binary is visible
+    (setq agent-shell-cursor-environment
+          (agent-shell-make-environment-variables
+           :inherit-env t))
+    (setq agent-shell-session-strategy 'prompt)
+    )
 #+end_src
 
 *** provide module

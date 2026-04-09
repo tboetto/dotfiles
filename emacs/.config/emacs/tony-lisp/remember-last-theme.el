@@ -134,6 +134,9 @@ for retrieval by remember-theme-load"
       (delete-file remember-theme-emacs-dot-file))
     (append-to-file (format "%s\n" (symbol-name (car custom-enabled-themes))) "" remember-theme-emacs-dot-file)))
 
+(defvar remember-theme--loading nil
+  "Non-nil while `remember-theme-load' is executing, to prevent re-entrancy.")
+
 ;;;###autoload
 (defun remember-theme-load ()
   "Load the theme used last.
@@ -149,13 +152,15 @@ Any currently loaded themes will be disabled and the theme named in
 `remember-theme-emacs-dot-file' will be loaded.
 
 If no `remember-theme-emacs-dot-file' file exists the operation is skipped."
-  (when (file-exists-p remember-theme-emacs-dot-file)
-    (mapc 'disable-theme custom-enabled-themes)
-    (let* ((theme-symbol (remember-theme-read)))
-      (unless (member theme-symbol custom-enabled-themes)
-        (custom-available-themes))
-      (my-load-theme theme-symbol))
-    (run-hooks 'remember-theme-after-load-hook)))
+  (unless remember-theme--loading
+    (let ((remember-theme--loading t))
+      (when (file-exists-p remember-theme-emacs-dot-file)
+        (mapc 'disable-theme custom-enabled-themes)
+        (let* ((theme-symbol (remember-theme-read)))
+          (unless (member theme-symbol custom-enabled-themes)
+            (custom-available-themes))
+          (my-load-theme theme-symbol))
+        (run-hooks 'remember-theme-after-load-hook)))))
 
 (provide 'remember-last-theme)
 

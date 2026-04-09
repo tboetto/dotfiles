@@ -18,6 +18,8 @@
   ;; Inherit env for cursor-agent-acp so the cursor binary is visible
   (setq agent-shell-cursor-environment
         (agent-shell-make-environment-variables
-         :inherit-env t)))
+         :inherit-env t))
+  (setq agent-shell-session-strategy 'prompt)
+  )
 
 (provide 'tony-emacs-agent-shell)
