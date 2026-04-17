@@ -283,7 +283,7 @@ config
    (lambda (string)
      (add-to-list 'load-path (locate-user-emacs-file string)))
    '("tony-lisp" "tony-emacs-modules"))
-
+  (require 'tony-emacs-meow)
   (require 'tony-emacs-miscellaneous)
   (require 'tony-emacs-visual-fill-column)
   (require 'tony-emacs-org)
@@ -293,8 +293,8 @@ config
   (require 'tony-emacs-fonts)
   (require 'tony-emacs-nerd-icons)
   (require 'tony-emacs-tweakers)
-  (require 'tony-emacs-meow)
   (require 'tony-emacs-which-key)
+  (require 'tony-emacs-godot)
   ;;(require 'tony-emacs-prot-themes)
   ;;(require 'tony-emacs-doom-themes)
   ;;(require 'tony-emacs-solaire-mode)
@@ -693,6 +693,24 @@ Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-l
 *** provide module
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-languages.el" :mkdirp yes
 (provide 'tony-emacs-languages)
+#+end_src
+** ~godot.el~
+*** ~gdscript-mode.el~
+This is the official package managed by Godot
+
+**** use-package
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-godot.el" :mkdirp yes
+  (use-package gdscript-mode
+    :ensure (:host github :repo "godotengine/emacs-gdscript-mode")
+    :hook ((gdscript-mode . lsp-deferred)
+           (gdscript-ts-mode . lsp-deferred))
+    :init
+    (require 'lsp-gdscript))
+#+end_src
+
+**** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-godot.el" :mkdirp yes
+  (provide 'tony-emacs-godot)
 #+end_src
 
 ** ~org.el~
@@ -2622,6 +2640,10 @@ Run ~M-x copilot-login~ once to authenticate with your GitHub account.
                '(ngxhtml-ts-mode ngxhtml-ts-mode-indent-offset))
   (add-to-list 'copilot-indentation-alist
                '(mhtml-mode sgml-basic-offset))
+  (add-to-list 'copilot-indentation-alist
+               '(gdscript-mode gdscript-indent-offset))
+  (add-to-list 'copilot-indentation-alist
+               '(gdscript-ts-mode gdscript-indent-offset))
   ;; Show a nerd-icons Copilot indicator in the mode-line
   (with-eval-after-load 'nerd-icons
     (defun tony/copilot-mode-line-indicator ()

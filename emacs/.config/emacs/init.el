@@ -119,7 +119,7 @@
  (lambda (string)
    (add-to-list 'load-path (locate-user-emacs-file string)))
  '("tony-lisp" "tony-emacs-modules"))
-
+(require 'tony-emacs-meow)
 (require 'tony-emacs-miscellaneous)
 (require 'tony-emacs-visual-fill-column)
 (require 'tony-emacs-org)
@@ -129,8 +129,8 @@
 (require 'tony-emacs-fonts)
 (require 'tony-emacs-nerd-icons)
 (require 'tony-emacs-tweakers)
-(require 'tony-emacs-meow)
 (require 'tony-emacs-which-key)
+(require 'tony-emacs-godot)
 ;;(require 'tony-emacs-prot-themes)
 ;;(require 'tony-emacs-doom-themes)
 ;;(require 'tony-emacs-solaire-mode)
