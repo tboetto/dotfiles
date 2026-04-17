@@ -773,6 +773,49 @@ Setup org mode basics:
   :ensure (:host github :repo "DEADB17/ob-racket"))
 #+end_src
 
+*** custom utilities
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
+(use-package
+  ox-md
+  :ensure nil
+  :after org
+  :config
+  (defun my/org-subtree-to-markdown-clipboard ()
+    "Export the current org subtree to markdown and copy to clipboard."
+    (interactive)
+    (let ((md (org-export-as 'md t)))
+      (kill-new md)
+      (message "Subtree exported to clipboard as markdown")))
+
+  (defun my/org-subtree-to-slack-clipboard ()
+    "Export the current org subtree to Slack-formatted text and copy to clipboard."
+    (interactive)
+    (let* ((md (org-export-as 'md t))
+           (slack (with-temp-buffer
+                    (insert md)
+                    ;; Remove table of contents
+                    (goto-char (point-min))
+                    (when (re-search-forward "^# Table of Contents$" nil t)
+                      (let ((start (line-beginning-position)))
+                        (when (re-search-forward "^<a id=" nil t)
+                          (delete-region start (line-beginning-position)))))
+                    ;; Remove <a id="..."></a> anchor lines
+                    (goto-char (point-min))
+                    (while (re-search-forward "^<a id=\"[^\"]*\"></a>\n?" nil t)
+                      (replace-match ""))
+                    ;; Convert markdown headings to Slack bold
+                    (goto-char (point-min))
+                    (while (re-search-forward "^#+ \\(.*\\)$" nil t)
+                      (replace-match "*\\1*"))
+                    ;; Collapse multiple blank lines
+                    (goto-char (point-min))
+                    (while (re-search-forward "\n\n\n+" nil t)
+                      (replace-match "\n\n"))
+                    (string-trim (buffer-string)))))
+      (kill-new slack)
+      (message "Subtree exported to clipboard as Slack-formatted text"))))
+#+end_src
+
 *** provide module
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
 (provide 'tony-emacs-org)
@@ -929,7 +972,12 @@ possible obsidian usage
 
 ** ~project.el~
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-project.el" :mkdirp yes
-(use-package project :ensure nil)
+(use-package project
+  :ensure nil
+  :bind (:map project-prefix-map
+              ("g" . consult-ripgrep))
+  :config
+  (setq xref-search-program 'ripgrep))
 #+end_src
 
 *** provide module
@@ -2054,16 +2102,36 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 
 ** ~blamer.el~
 *** use and config blamer
-#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-blamer.el" :mkdirp yes
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-blamer.el" :mkdirp yes :prologue ";;; -*- lexical-binding: t; -*-"
 (use-package
  blamer
  :ensure (:host github :repo "artawower/blamer.el")
- :bind (("s-i" . blamer-show-commit-info))
+ :bind (("s-i" . blamer-show-commit-info)
+        ("s-I" . my/blamer-open-pr))
  :custom (blamer-idle-time 0.3) (blamer-min-offset 70)
  :custom-face
  (blamer-face
   ((t :foreground "#7a88cf" :background nil :height 140 :italic t)))
- :config (global-blamer-mode 1))
+ :config
+ (global-blamer-mode 1)
+ (defun my/blamer-open-pr ()
+   "Open the GitHub PR that merged the commit at the current line."
+   (interactive)
+   (let ((line (line-number-at-pos))
+         (dir default-directory))
+     (blamer--get-async-blame-info
+      (buffer-file-name) line line
+      (lambda (commit-info)
+        (when (and commit-info (string-match "^\\([[:xdigit:]]+\\) " commit-info))
+          (let* ((sha (match-string 1 commit-info))
+                 (default-directory dir)
+                 (url (string-trim
+                       (shell-command-to-string
+                        (format "gh pr list --search %s --state merged --json url --jq '.[0].url' 2>/dev/null"
+                                (shell-quote-argument sha))))))
+            (if (string-empty-p url)
+                (message "No merged PR found for commit %s" sha)
+              (browse-url url)))))))))
 #+end_src
 
 *** provide blamer
