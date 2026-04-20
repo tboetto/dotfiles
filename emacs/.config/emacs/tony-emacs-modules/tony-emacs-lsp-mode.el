@@ -3,6 +3,8 @@
  lsp-mode
  :diminish "LSP"
  :ensure t
+ :init
+ (setq lsp-keymap-prefix "C-c l") ; Must be in :init so defvar lsp-mode-map picks it up at load time
  :hook
  ((lsp-mode . lsp-diagnostics-mode)
   (lsp-mode . lsp-enable-which-key-integration)
@@ -10,7 +12,6 @@
    .
    lsp-deferred))
  :custom
- (lsp-keymap-prefix "C-l") ; Prefix for LSP actions
  (lsp-completion-provider :none) ; Using company as the provider
  (lsp-diagnostics-provider :flycheck)
  (lsp-session-file (locate-user-emacs-file ".lsp-session"))
@@ -18,7 +19,7 @@
  (lsp-keep-workspace-alive nil) ; Close LSP server if all project buffers are closed
  (lsp-idle-delay 0.5) ; Debounce timer for `after-change-function'
  ;; core
- (lsp-enable-xref nil) ; Use xref to find references
+ (lsp-enable-xref t) ; Use xref to find references
  (lsp-auto-configure t) ; Used to decide between current active servers
  (lsp-eldoc-enable-hover t) ; Display signature information in the echo area
  (lsp-enable-dap-auto-configure t) ; Debug support
@@ -58,6 +59,10 @@
  ;; Use project-local tsserver.js so ts-ls respects the project's tsconfig (e.g. "module": "preserve")
  (lsp-clients-typescript-prefer-use-project-ts-server t)
 
+ :config
+ ;; lsp-mode-map is initialized at load time before :init runs (elpaca async),
+ ;; so we must explicitly rebind the prefix key here after load.
+ (define-key lsp-mode-map (kbd "C-c l") lsp-command-map)
  :preface
  (defun lsp-booster--advice-json-parse (old-fn &rest args)
    "Try to parse bytecode instead of json."
