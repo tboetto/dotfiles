@@ -23,13 +23,10 @@
   "Build ngserver command using project-local node_modules when available.
 Uses project node_modules for --tsProbeLocations and --ngProbeLocations so
 ngserver loads the project's Angular/TypeScript versions (like VSCode does).
-Falls back to the global n-managed node_modules."
+Falls back to npm's global node_modules."
   (let* ((root (lsp-workspace-root))
          (project-nm (and root (expand-file-name "node_modules" root)))
-         (global-nm (expand-file-name
-                     "lib/node_modules"
-                     (string-trim (shell-command-to-string
-                                   "dirname $(dirname $(which ngserver))"))))
+         (global-nm (string-trim (shell-command-to-string "npm root -g")))
          (ts-probe (if (and project-nm
                             (file-directory-p (expand-file-name "typescript" project-nm)))
                        project-nm
