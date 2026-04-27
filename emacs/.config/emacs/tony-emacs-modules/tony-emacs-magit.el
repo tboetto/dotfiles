@@ -19,6 +19,7 @@
  :init (setq magit-define-global-key-bindings nil)
  (setq magit-section-visibility-indicator
        '(magit-fringe-bitmap> . magit-fringe-bitmapv))
+ (setq magit-diff-specify-hunk-foreground nil)
  :config (setq git-commit-summary-max-length 50)
  ;; NOTE 2023-01-24: I used to also include `overlong-summary-line'
  ;; in this list, but I realised I do not need it.  My summaries are
@@ -27,6 +28,8 @@
  (setq git-commit-style-convention-checks '(non-empty-second-line))
  (define-key magit-mode-map (kbd "x") #'magit-discard)
  (setq magit-diff-refine-hunk t)
+ (setq magit-diff-fontify-hunk t)
+ (setq magit-diff-use-indicator-faces t)
 
  ;; Show icons for files in the Magit status and other buffers.
  (with-eval-after-load 'magit
