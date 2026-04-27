@@ -28,7 +28,7 @@
  (setq git-commit-style-convention-checks '(non-empty-second-line))
  (define-key magit-mode-map (kbd "x") #'magit-discard)
  (setq magit-diff-refine-hunk t)
- (setq magit-diff-fontify-hunk t)
+ (setq magit-diff-fontify-hunk 'all)
  (setq magit-diff-use-indicator-faces t)
 
  ;; Show icons for files in the Magit status and other buffers.

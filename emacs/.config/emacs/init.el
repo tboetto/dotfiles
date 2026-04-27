@@ -131,6 +131,7 @@
 (require 'tony-emacs-tweakers)
 (require 'tony-emacs-which-key)
 (require 'tony-emacs-godot)
+(require 'tony-emacs-csharp)
 ;;(require 'tony-emacs-prot-themes)
 ;;(require 'tony-emacs-doom-themes)
 ;;(require 'tony-emacs-solaire-mode)
