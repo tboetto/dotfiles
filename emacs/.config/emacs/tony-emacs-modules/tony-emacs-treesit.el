@@ -12,7 +12,6 @@
   ("\\.Dockerfile\\'" . dockerfile-ts-mode)
   ("\\.prisma\\'" . prisma-ts-mode)
   ("\\.yaml\\'" . yaml-ts-mode)
-  ("\\.cs\\'" . csharp-ts-mode)
   ;; More modes defined here...
   )
  :preface
@@ -56,9 +55,7 @@
             "v0.20.3"
             "typescript/src"))
           (yaml . ("https://github.com/ikatyang/tree-sitter-yaml"))
-          (prisma "https://github.com/victorhqc/tree-sitter-prisma")
-          (c-sharp
-           "https://github.com/tree-sitter/tree-sitter-c-sharp")))
+          (prisma "https://github.com/victorhqc/tree-sitter-prisma")))
      (add-to-list 'treesit-language-source-alist grammar)
      ;; Only install `grammar' if we don't already have it
      ;; installed. However, if you want to *update* a grammar then
@@ -86,8 +83,7 @@
             (json-mode . json-ts-mode)
             (js-json-mode . json-ts-mode)
             (sh-mode . bash-ts-mode)
-            (sh-base-mode . bash-ts-mode)
-            (csharp-mode . csharp-ts-mode)))
+            (sh-base-mode . bash-ts-mode)))
    (add-to-list 'major-mode-remap-alist mapping))
  :config (tb/setup-install-grammars) (setq treesit-font-lock-level 6))
 
