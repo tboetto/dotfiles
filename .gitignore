@@ -6,3 +6,18 @@
 # OS
 .DS_Store
 /.agent-shell/
+
+# Emacs generated/cache directories and files
+emacs/.config/emacs/.cache/
+emacs/.config/emacs/.lsp-session
+emacs/.config/emacs/agent/
+emacs/.config/emacs/eln-cache/
+emacs/.config/emacs/elpa/
+emacs/.config/emacs/elpaca/
+emacs/.config/emacs/fontaine-latest-state.eld
+emacs/.config/emacs/history
+emacs/.config/emacs/places
+emacs/.config/emacs/projects
+emacs/.config/emacs/recentf
+emacs/.config/emacs/transient/
+emacs/.config/emacs/tree-sitter/

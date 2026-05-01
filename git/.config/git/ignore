@@ -1,0 +1,10 @@
+# Claude settings
+**/.claude/settings.local.json
+
+# Agent shell directories
+.agent-shell/
+
+# Emacs temp/lock files
+*~
+\#*\#
+.\#*
