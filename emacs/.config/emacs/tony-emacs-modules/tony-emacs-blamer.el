@@ -1,7 +1,7 @@
 (use-package
  blamer
  :ensure (:host github :repo "artawower/blamer.el")
- :bind (("s-i" . blamer-show-commit-info)
+ :bind (("s-i" . my/blamer-toggle-mode)
         ("s-I" . my/blamer-open-pr))
  :custom (blamer-idle-time 0.3) (blamer-min-offset 70)
  :custom-face
@@ -9,6 +9,10 @@
   ((t :foreground "#7a88cf" :background nil :height 140 :italic t)))
  :config
  (global-blamer-mode 1)
+ (defun my/blamer-toggle-mode ()
+   "Toggle blamer-mode on/off."
+   (interactive)
+   (blamer-mode (if blamer-mode -1 1)))
  (defun my/blamer-open-pr ()
    "Open the GitHub PR that merged the commit at the current line."
    (interactive)

@@ -630,7 +630,7 @@ Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-l
   :hook (org-mode . visual-line-mode)
   :init
   (setq-default visual-fill-column-center-text t)
-  (setq-default visual-fill-column-width 100)
+  (setq-default visual-fill-column-width 140)
   (setq-default visual-fill-column-enable-sensible-window-split t)
 
   (add-hook 'visual-line-mode-hook #'visual-fill-column-for-vline)
@@ -1143,6 +1143,34 @@ Display number of matches in modeline when searching
   scroll-conservatively 3
   scroll-margin 0)
  :config (ultra-scroll-mode 1))
+#+end_src
+
+*** copy relative path with line number
+Copy ~file:line~ to clipboard, relative to project root.
+Works in regular buffers (includes line number) and dired (path only).
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-tweakers.el" :mkdirp yes
+(defun my/copy-relative-path-with-line ()
+  "Copy relative path of current file with line number to clipboard.
+In dired, copies the path of the file at point without a line number.
+Path is relative to the project root, or `default-directory' if no project."
+  (interactive)
+  (let* ((file-path
+          (cond
+           ((derived-mode-p 'dired-mode) (dired-get-file-for-visit))
+           ((buffer-file-name) (buffer-file-name))
+           (t (error "No file associated with this buffer"))))
+         (root (or (when-let ((proj (project-current)))
+                     (project-root proj))
+                   default-directory))
+         (relative (file-relative-name file-path root))
+         (result
+          (if (derived-mode-p 'dired-mode)
+              relative
+            (format "%s:%d" relative (line-number-at-pos)))))
+    (kill-new result)
+    (message "Copied: %s" result)))
+
+(global-set-key (kbd "C-c y p") #'my/copy-relative-path-with-line)
 #+end_src
 
 *** provide module
@@ -2127,7 +2155,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 (use-package
  blamer
  :ensure (:host github :repo "artawower/blamer.el")
- :bind (("s-i" . blamer-show-commit-info)
+ :bind (("s-i" . my/blamer-toggle-mode)
         ("s-I" . my/blamer-open-pr))
  :custom (blamer-idle-time 0.3) (blamer-min-offset 70)
  :custom-face
@@ -2135,6 +2163,10 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
   ((t :foreground "#7a88cf" :background nil :height 140 :italic t)))
  :config
  (global-blamer-mode 1)
+ (defun my/blamer-toggle-mode ()
+   "Toggle blamer-mode on/off."
+   (interactive)
+   (blamer-mode (if blamer-mode -1 1)))
  (defun my/blamer-open-pr ()
    "Open the GitHub PR that merged the commit at the current line."
    (interactive)
