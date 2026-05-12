@@ -17,6 +17,7 @@
 
 ** Find gcc and libgccjit packages to be used for emacs on macOS
 random commit
+random commit2
 #+begin_src emacs-lisp :tangle "early-init.el" :mkdirp yes
 (defun homebrew-gcc-paths ()
   "Return GCC library paths from Homebrew installations.
