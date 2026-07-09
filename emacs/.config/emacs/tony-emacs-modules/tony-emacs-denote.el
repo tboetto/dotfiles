@@ -1,6 +1,6 @@
 (use-package
  denote
- :ensure t
+ :ensure (:host github :repo "protesilaos/denote")
  :demand t
  :init
  :config
@@ -26,7 +26,7 @@
 
 (use-package
  denote-journal
- :ensure t
+ :ensure (:host github :repo "protesilaos/denote-journal")
  :demand t
  :after denote
  :custom
@@ -57,27 +57,50 @@
  ;; something that is located at the Obsidian directory. Having the ability to
  ;; link my Obsidian notes with my denote(s) would be really nice. Definitely
  ;; going to look into this.
- :ensure t
+ :ensure (:host github :repo "protesilaos/denote-markdown")
  :demand t
  :after denote)
 
 (use-package
- denote-silo
- :ensure t
- :demand t
- :after denote
- :custom
- (denote-silo-directories (list denote-directory denote-workdir))
- :bind
- (("C-c N d" . denote-silo-dired)
-  ("C-c N n" . denote-silo-open-or-create)
-  ("C-c N N" . denote-silo-select-silo-then-command)
-  ("C-c N c" . denote-silo-cd)))
+  denote-silo
+  :ensure (:host github :repo "protesilaos/denote-silo")
+  :demand t
+  :after denote
+  :custom
+  (denote-silo-directories (list denote-directory denote-workdir))
+  :bind
+  (("C-c N d" . denote-silo-dired)
+   ("C-c N n" . denote-silo-open-or-create)
+   ("C-c N N" . denote-silo-select-silo-then-command)
+   ("C-c N c" . denote-silo-cd)))
+
+(use-package denote-sequence
+:ensure (:host github :repo "protesilaos/denote-sequence")
+:bind
+( :map global-map
+  ;; Here we make "C-c n s" a prefix for all "[n]otes with [s]equence".
+  ;; This is just for demonstration purposes: use the key bindings
+  ;; that work for you.  Also check the commands:
+  ;;
+  ;; - `denote-sequence-new-parent'
+  ;; - `denote-sequence-new-sibling'
+  ;; - `denote-sequence-new-child'
+  ;; - `denote-sequence-new-child-of-current'
+  ;; - `denote-sequence-new-sibling-of-current'
+  ("C-c n s s" . denote-sequence)
+  ("C-c n s f" . denote-sequence-find)
+  ("C-c n s l" . denote-sequence-link)
+  ("C-c n s d" . denote-sequence-dired)
+  ("C-c n s r" . denote-sequence-reparent)
+  ("C-c n s c" . denote-sequence-convert))
+:config
+;; The default sequence scheme is `numeric'.
+(setq denote-sequence-scheme 'alphanumeric))
 
 (use-package
  denote-explore
  :ensure t
- :after denote
+ :after denote denote-sequence
  :custom
  ;; Where to store network data and in which format
  (denote-explore-network-directory
@@ -110,7 +133,7 @@
   ("C-c n e D" . denote-explore-degree-barchart)))
 
 (use-package consult-denote
-  :ensure t
+  :ensure (:host github :repo "protesilaos/consult-denote")
   :bind
   (("C-c n c f" . consult-denote-find)
    ("C-c n c g" . consult-denote-grep))

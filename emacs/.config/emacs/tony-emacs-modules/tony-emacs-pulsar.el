@@ -1,5 +1,5 @@
 (use-package pulsar
-:ensure t
+:ensure (:host github :repo "protesilaos/pulsar")
 :bind
 ( :map global-map
   ("C-x l" . pulsar-pulse-line) ; overrides `count-lines-page'

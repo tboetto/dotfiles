@@ -42,6 +42,14 @@
  ;; Enable Elpaca support for use-package's :ensure keyword.
  (elpaca-use-package-mode))
 
+(setq elpaca-menu-functions
+      (remq 'elpaca-menu-gnu-elpa
+            (remq 'elpaca-menu-nongnu-elpa elpaca-menu-functions)))
+
+;; GNU ELPA transitive dependencies (moved off MELPA, needed by lsp-mode).
+;; Declared early so elpaca has their recipes before processing the queue.
+(use-package spinner :ensure (:host github :repo "Malabarba/spinner.el"))
+
 (add-hook 'window-setup-hook 'toggle-frame-maximized t)
 
 (setq ring-bell-function #'ignore)
@@ -159,3 +167,4 @@
 (require 'tony-emacs-copilot)
 (require 'tony-emacs-agent-shell)
 (require 'tony-emacs-agent-shell-sidebar)
+(require 'tony-emacs-mermaid)

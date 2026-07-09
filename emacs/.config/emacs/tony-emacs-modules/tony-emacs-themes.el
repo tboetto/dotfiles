@@ -8,15 +8,14 @@
   :ensure t)
 
 (use-package ef-themes
- :ensure t
-    )
+  :ensure (:host github :repo "protesilaos/ef-themes"))
 
 (use-package standard-themes
-:ensure t)
+:ensure (:host github :repo "protesilaos/standard-themes"))
 
 (use-package
  doric-themes
- :ensure t
+ :ensure (:host github :repo "protesilaos/doric-themes")
  :custom (doric-themes-toggle '(doric-light doric-obsidian)))
 
 (use-package

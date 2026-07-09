@@ -1,5 +1,6 @@
 ;; copilot requires track-changes >= 1.4
-(use-package track-changes :ensure t)
+(use-package track-changes
+  :ensure (:host github :repo "emacs-straight/track-changes" :type git))
 
 (use-package copilot
   :ensure (:host github :repo "copilot-emacs/copilot.el")

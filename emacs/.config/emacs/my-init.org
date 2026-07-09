@@ -15,6 +15,12 @@
 (setq package-enable-at-startup nil)
 #+end_src
 
+** disable toolbar before frame creation
+#+begin_src emacs-lisp :tangle "early-init.el" :mkdirp yes
+  (tool-bar-mode -1)
+  ;;(push '(tool-bar-lines . 0) default-frame-alist)
+#+end_src
+
 ** Find gcc and libgccjit packages to be used for emacs on macOS
 random commit
 random commit2
@@ -148,6 +154,19 @@ This way you can use elpaca with use-package.
  elpaca-use-package
  ;; Enable Elpaca support for use-package's :ensure keyword.
  (elpaca-use-package-mode))
+#+end_src
+
+*** Remove blocked ELPA menu sources
+=elpa.gnu.org= and =elpa.nongnu.org= are blocked on the corporate network.
+Packages exclusively on GNU/NonGNU ELPA have explicit =:ensure= recipes in their modules.
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(setq elpaca-menu-functions
+      (remq 'elpaca-menu-gnu-elpa
+            (remq 'elpaca-menu-nongnu-elpa elpaca-menu-functions)))
+
+;; GNU ELPA transitive dependencies (moved off MELPA, needed by lsp-mode).
+;; Declared early so elpaca has their recipes before processing the queue.
+(use-package spinner :ensure (:host github :repo "Malabarba/spinner.el"))
 #+end_src
 
 ** Basic emacs configuration
@@ -325,6 +344,7 @@ config
   (require 'tony-emacs-copilot)
   (require 'tony-emacs-agent-shell)
   (require 'tony-emacs-agent-shell-sidebar)
+  (require 'tony-emacs-mermaid)
 #+end_src
 
 * Packages
@@ -622,6 +642,26 @@ Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-l
  (when (memq window-system '(mac ns x))
    (add-to-list 'exec-path-from-shell-variables "NODE_EXTRA_CA_CERTS")
    (exec-path-from-shell-initialize)))
+#+end_src
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-miscellaneous.el" :mkdirp yes
+(use-package compat
+  :ensure (:host github :repo "emacs-compat/compat" :type git :wait t))
+#+end_src
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-miscellaneous.el" :mkdirp yes
+(electric-pair-mode 1)
+#+end_src
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-miscellaneous.el" :mkdirp yes
+(use-package markdown-mode
+  :ensure t
+  :mode (("\\.md\\'" . markdown-mode)
+         ("\\.markdown\\'" . markdown-mode)))
+#+end_src
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-miscellaneous.el" :mkdirp yes
+
 (provide 'tony-emacs-miscellaneous)
 #+end_src
 ** ~visual-fill-column.el~
@@ -632,7 +672,7 @@ Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-l
   :hook (org-mode . visual-line-mode)
   :init
   (setq-default visual-fill-column-center-text t)
-  (setq-default visual-fill-column-width 140)
+  (setq-default visual-fill-column-width 400)
   (setq-default visual-fill-column-enable-sensible-window-split t)
 
   (add-hook 'visual-line-mode-hook #'visual-fill-column-for-vline)
@@ -846,7 +886,7 @@ Setup org mode basics:
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-denote.el" :mkdirp yes
 (use-package
  denote
- :ensure t
+ :ensure (:host github :repo "protesilaos/denote")
  :demand t
  :init
  :config
@@ -874,7 +914,7 @@ Setup org mode basics:
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-denote.el" :mkdirp yes
 (use-package
  denote-journal
- :ensure t
+ :ensure (:host github :repo "protesilaos/denote-journal")
  :demand t
  :after denote
  :custom
@@ -900,7 +940,8 @@ Setup org mode basics:
   ("C-c n J" . denote-journal-new-or-existing-entry)))
 #+end_src
 
-*** use and config denote markdown
+*** use and config denote
+markdown
 possible obsidian usage
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-denote.el" :mkdirp yes
 (use-package
@@ -909,33 +950,60 @@ possible obsidian usage
  ;; something that is located at the Obsidian directory. Having the ability to
  ;; link my Obsidian notes with my denote(s) would be really nice. Definitely
  ;; going to look into this.
- :ensure t
+ :ensure (:host github :repo "protesilaos/denote-markdown")
  :demand t
  :after denote)
 #+end_src
 
 *** use and config denote-silo
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-denote.el" :mkdirp yes
-(use-package
- denote-silo
- :ensure t
- :demand t
- :after denote
- :custom
- (denote-silo-directories (list denote-directory denote-workdir))
- :bind
- (("C-c N d" . denote-silo-dired)
-  ("C-c N n" . denote-silo-open-or-create)
-  ("C-c N N" . denote-silo-select-silo-then-command)
-  ("C-c N c" . denote-silo-cd)))
+  (use-package
+    denote-silo
+    :ensure (:host github :repo "protesilaos/denote-silo")
+    :demand t
+    :after denote
+    :custom
+    (denote-silo-directories (list denote-directory denote-workdir))
+    :bind
+    (("C-c N d" . denote-silo-dired)
+     ("C-c N n" . denote-silo-open-or-create)
+     ("C-c N N" . denote-silo-select-silo-then-command)
+     ("C-c N c" . denote-silo-cd)))
 #+end_src
+
+*** use and config denote-sequence
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-denote.el" :mkdirp yes
+  (use-package denote-sequence
+  :ensure (:host github :repo "protesilaos/denote-sequence")
+  :bind
+  ( :map global-map
+    ;; Here we make "C-c n s" a prefix for all "[n]otes with [s]equence".
+    ;; This is just for demonstration purposes: use the key bindings
+    ;; that work for you.  Also check the commands:
+    ;;
+    ;; - `denote-sequence-new-parent'
+    ;; - `denote-sequence-new-sibling'
+    ;; - `denote-sequence-new-child'
+    ;; - `denote-sequence-new-child-of-current'
+    ;; - `denote-sequence-new-sibling-of-current'
+    ("C-c n s s" . denote-sequence)
+    ("C-c n s f" . denote-sequence-find)
+    ("C-c n s l" . denote-sequence-link)
+    ("C-c n s d" . denote-sequence-dired)
+    ("C-c n s r" . denote-sequence-reparent)
+    ("C-c n s c" . denote-sequence-convert))
+  :config
+  ;; The default sequence scheme is `numeric'.
+  (setq denote-sequence-scheme 'alphanumeric))
+#+end_src
+
 
 *** use and config denote-explore
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-denote.el" :mkdirp yes
 (use-package
  denote-explore
  :ensure t
- :after denote
+ :after denote denote-sequence
  :custom
  ;; Where to store network data and in which format
  (denote-explore-network-directory
@@ -971,7 +1039,7 @@ possible obsidian usage
 *** use and config consult denote
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-denote.el" :mkdirp yes
 (use-package consult-denote
-  :ensure t
+  :ensure (:host github :repo "protesilaos/consult-denote")
   :bind
   (("C-c n c f" . consult-denote-find)
    ("C-c n c g" . consult-denote-grep))
@@ -1175,6 +1243,21 @@ Path is relative to the project root, or `default-directory' if no project."
 (global-set-key (kbd "C-c y p") #'my/copy-relative-path-with-line)
 #+end_src
 
+*** open current file in Chrome
+Opens the current buffer's file (or the file at point in dired) in Google
+Chrome. Useful for previewing Markdown via the browser's Markdown extension.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-tweakers.el" :mkdirp yes
+(defun my/open-in-chrome ()
+  "Open the current buffer's file in Google Chrome."
+  (interactive)
+  (let ((file (or (buffer-file-name)
+                  (and (derived-mode-p 'dired-mode) (dired-get-file-for-visit)))))
+    (unless file (user-error "Buffer is not visiting a file"))
+    (call-process "open" nil 0 nil "-a" "Google Chrome" file)))
+
+(global-set-key (kbd "C-c b") #'my/open-in-chrome)
+#+end_src
+
 *** provide module
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-tweakers.el" :mkdirp yes
 (provide 'tony-emacs-tweakers)
@@ -1324,15 +1407,14 @@ Path is relative to the project root, or `default-directory' if no project."
 
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
 (use-package ef-themes
- :ensure t
-    )
+  :ensure (:host github :repo "protesilaos/ef-themes"))
 #+end_src
 
 *** Standard themes
 
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
   (use-package standard-themes
-  :ensure t)
+  :ensure (:host github :repo "protesilaos/standard-themes"))
 #+end_src
 
 *** Doric themes
@@ -1340,7 +1422,7 @@ Path is relative to the project root, or `default-directory' if no project."
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
 (use-package
  doric-themes
- :ensure t
+ :ensure (:host github :repo "protesilaos/doric-themes")
  :custom (doric-themes-toggle '(doric-light doric-obsidian)))
 #+end_src
 
@@ -1586,7 +1668,7 @@ Inspired by Plan 9 Acme & Sam.
 ** ~pulsar.el~
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-pulsar.el" :mkdirp yes
   (use-package pulsar
-  :ensure t
+  :ensure (:host github :repo "protesilaos/pulsar")
   :bind
   ( :map global-map
     ("C-x l" . pulsar-pulse-line) ; overrides `count-lines-page'
@@ -1663,7 +1745,7 @@ Inspired by Plan 9 Acme & Sam.
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-fonts.el" :mkdirp yes
 (use-package
  fontaine
- :ensure t
+ :ensure (:host github :repo "protesilaos/fontaine")
  :init (fontaine-mode 1)
  ;; Persist the latest font preset when closing/starting Emacs and
  ;; while switching between themes.
@@ -1745,7 +1827,7 @@ Inspired by Plan 9 Acme & Sam.
 ;; Read the manual: <https://protesilaos.com/emacs/show-font>
 (use-package
  show-font
- :ensure t
+ :ensure (:host github :repo "protesilaos/show-font")
  :if (display-graphic-p)
  :commands (show-font-select-preview show-font-list show-font-tabulated)
  :config
@@ -2323,7 +2405,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 #+end_src
 -macOS dependencies:
 #+begin_src sh
-  brew install enchant hunspell
+  brew install enchant hunspell pkg-config
 #+end_src
 
 *** use and configure jinx
@@ -2381,6 +2463,12 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
  lsp-biome
  :after apheleia
  :ensure (:host github :repo "cxa/lsp-biome"))
+
+(defun my/biome-organize-imports ()
+  "Run biome's organize imports code action explicitly."
+  (interactive)
+  (lsp-execute-code-action-by-kind "source.organizeImports.biome"))
+
 (provide 'tony-emacs-lsp-biome)
 #+end_src
 
@@ -2655,7 +2743,8 @@ Run ~M-x copilot-login~ once to authenticate with your GitHub account.
 *** use and config copilot with nerd-icons
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-copilot.el" :mkdirp yes
 ;; copilot requires track-changes >= 1.4
-(use-package track-changes :ensure t)
+(use-package track-changes
+  :ensure (:host github :repo "emacs-straight/track-changes" :type git))
 
 (use-package copilot
   :ensure (:host github :repo "copilot-emacs/copilot.el")
@@ -2717,7 +2806,7 @@ pnpm install -g @blowmage/cursor-agent-acp
   (use-package acp :ensure t :after shell-maker)
 
   (use-package agent-shell
-    :ensure t
+    :ensure (:host github :repo "xenodium/agent-shell")
     :after (shell-maker acp)
     :bind
     (("C-c a a" . agent-shell)
@@ -2726,6 +2815,9 @@ pnpm install -g @blowmage/cursor-agent-acp
     :config
     ;; Inherit the current Emacs process environment so the claude binary
     ;; in PATH (and nvm, etc.) is visible to the agent subprocess
+    (setq agent-shell-session-restore-verbosity 'full)
+    (setq agent-shell-markdown-render-function #'agent-shell-markdown-replace-markup)
+    (setq agent-shell-highlight-blocks t)
     (setq agent-shell-anthropic-claude-environment
           (agent-shell-make-environment-variables
            :inherit-env t))
@@ -2774,3 +2866,17 @@ Keybinds extend the existing =C-c a= prefix:
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-agent-shell-sidebar.el" :mkdirp yes
 (provide 'tony-emacs-agent-shell-sidebar)
 #+end_src
+
+** ~mermaid-mode.el~
+
+*** use and config mermaid-mode
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-mermaid.el" :mkdirp yes
+  (use-package mermaid-mode
+    :ensure (:host github :repo "abrochard/mermaid-mode")
+    )
+#+end_src
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-mermaid.el" :mkdirp yes
+(provide 'tony-emacs-mermaid)
+#+end_src
+

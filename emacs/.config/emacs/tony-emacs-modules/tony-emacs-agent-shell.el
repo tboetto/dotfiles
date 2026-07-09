@@ -3,7 +3,7 @@
 (use-package acp :ensure t :after shell-maker)
 
 (use-package agent-shell
-  :ensure t
+  :ensure (:host github :repo "xenodium/agent-shell")
   :after (shell-maker acp)
   :bind
   (("C-c a a" . agent-shell)
@@ -12,6 +12,9 @@
   :config
   ;; Inherit the current Emacs process environment so the claude binary
   ;; in PATH (and nvm, etc.) is visible to the agent subprocess
+  (setq agent-shell-session-restore-verbosity 'full)
+  (setq agent-shell-markdown-render-function #'agent-shell-markdown-replace-markup)
+  (setq agent-shell-highlight-blocks t)
   (setq agent-shell-anthropic-claude-environment
         (agent-shell-make-environment-variables
          :inherit-env t))

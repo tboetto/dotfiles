@@ -49,7 +49,7 @@
 
 (use-package
  fontaine
- :ensure t
+ :ensure (:host github :repo "protesilaos/fontaine")
  :init (fontaine-mode 1)
  ;; Persist the latest font preset when closing/starting Emacs and
  ;; while switching between themes.
@@ -129,7 +129,7 @@
 ;; Read the manual: <https://protesilaos.com/emacs/show-font>
 (use-package
  show-font
- :ensure t
+ :ensure (:host github :repo "protesilaos/show-font")
  :if (display-graphic-p)
  :commands (show-font-select-preview show-font-list show-font-tabulated)
  :config

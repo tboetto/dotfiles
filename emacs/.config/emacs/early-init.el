@@ -2,6 +2,9 @@
 
 (setq package-enable-at-startup nil)
 
+(tool-bar-mode -1)
+;;(push '(tool-bar-lines . 0) default-frame-alist)
+
 (defun homebrew-gcc-paths ()
   "Return GCC library paths from Homebrew installations.
   Detects paths for gcc and libgccjit packages to be used in LIBRARY_PATH."
