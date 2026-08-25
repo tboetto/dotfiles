@@ -1,0 +1,112 @@
+#!/bin/sh
+# Focus timer: shows a tomato in the status bar until time's up.
+# Usage:
+#   pomodoro [minutes]        session for N minutes (default 25) from now
+#   pomodoro until HH:MM      session ending at the next occurrence of HH:MM
+#   pomodoro HH:MM            same as above (dmenu passes a bare time)
+#   pomodoro stop             cancel the active session
+#   pomodoro status           print remaining time (used by sb-clock)
+#   pomodoro log HEADING      append HEADING as an org subheading under
+#                             "* Pomodoro" in today's denote journal entry
+#
+# On natural completion, a break of work/5 minutes (min 1) is suggested via
+# a follow-up notification. Starting a new session within 3x that break
+# length logs the break itself (with its real elapsed time); waiting longer
+# than that just drops it, since it stopped being a "break".
+
+statefile="${XDG_CACHE_HOME:-$HOME/.cache}/pomodoro"
+breakfile="${XDG_CACHE_HOME:-$HOME/.cache}/pomodoro-break"
+redraw() { pkill -RTMIN+1 "${STATUSBAR:-dwmblocks}"; }
+
+arg="$1"
+[ "$arg" = "until" ] && arg="$2"
+
+case "$arg" in
+stop)
+	if [ -f "$statefile" ]; then
+		start=$(grep '^start=' "$statefile" | cut -d= -f2)
+		now=$(date +%s)
+		rm -f "$statefile"
+		notify-send "🍅 Pomodoro" "Cancelled."
+		redraw
+		line="** $(date -d @"$start" '+%H:%M')-$(date -d @"$now" '+%H:%M') (cancelled after $(( (now - start) / 60 ))m)"
+		setsid -f sh -c "pomodoro log '$line'"
+	fi
+	exit 0
+	;;
+status)
+	if [ -f "$statefile" ]; then
+		end=$(grep '^end=' "$statefile" | cut -d= -f2)
+		remaining=$(( end - $(date +%s) ))
+		if [ "$remaining" -gt 0 ]; then
+			echo "$((remaining/60))m $((remaining%60))s remaining (ends $(date -d @"$end" '+%H:%M'))"
+		else
+			echo "wrapping up..."
+		fi
+	else
+		echo "no active session"
+	fi
+	exit 0
+	;;
+log)
+	line="$2"
+	emacsclient --eval '(let* ((path (denote-journal-path-to-new-or-existing-entry))
+       (buf (find-file-noselect path)))
+  (with-current-buffer buf
+    (goto-char (point-min))
+    (if (re-search-forward "^\\* Pomodoro$" nil t)
+        (progn (org-end-of-subtree t t) (unless (bolp) (insert "\n")))
+      (goto-char (point-max))
+      (skip-chars-backward "\n")
+      (delete-region (point) (point-max))
+      (insert "\n\n* Pomodoro\n"))
+    (insert "'"$line"'\n")
+    (save-buffer)))' >/dev/null 2>&1
+	exit 0
+	;;
+*:*)
+	now=$(date +%s)
+	end=$(date -d "$arg" +%s) || exit 1
+	[ "$end" -le "$now" ] && end=$(date -d "tomorrow $arg" +%s)
+	;;
+*[!0-9]*)
+	echo "usage: pomodoro [minutes|HH:MM|until HH:MM|stop|status]" >&2
+	exit 1
+	;;
+*)
+	end=$(( $(date +%s) + "${arg:-25}" * 60 ))
+	;;
+esac
+
+if [ -f "$breakfile" ]; then
+	bstart=$(grep '^start=' "$breakfile" | cut -d= -f2)
+	deadline=$(grep '^deadline=' "$breakfile" | cut -d= -f2)
+	bnow=$(date +%s)
+	if [ "$bnow" -le "$deadline" ]; then
+		bline="** Break $(date -d @"$bstart" '+%H:%M')-$(date -d @"$bnow" '+%H:%M') ($(( (bnow - bstart) / 60 ))m)"
+		setsid -f sh -c "pomodoro log '$bline'"
+	fi
+	rm -f "$breakfile"
+fi
+
+start=$(date +%s)
+printf 'start=%s\nend=%s\n' "$start" "$end" > "$statefile"
+notify-send "🍅 Pomodoro" "Started, ends $(date -d @"$end" '+%H:%M')"
+redraw
+
+logline="** $(date -d @"$start" '+%H:%M')-$(date -d @"$end" '+%H:%M') ($(( (end - start) / 60 ))m)"
+breaksec=$(( (end - start) / 5 ))
+[ "$breaksec" -lt 60 ] && breaksec=60
+
+setsid -f sh -c "
+	sleep \$(( $end - $start ))
+	[ \"\$(grep '^end=' '$statefile' 2>/dev/null | cut -d= -f2)\" = '$end' ] || exit 0
+	rm -f '$statefile'
+	notify-send '🍅 Pomodoro' 'Session complete - take a break.'
+	pkill -RTMIN+1 \"\${STATUSBAR:-dwmblocks}\"
+	pomodoro log '$logline'
+	bstart=\$(date +%s)
+	printf 'start=%s\ndeadline=%s\n' \"\$bstart\" \"\$(( bstart + $breaksec * 3 ))\" > '$breakfile'
+	sleep $breaksec
+	[ -f '$breakfile' ] && notify-send '🍅 Pomodoro' 'Break over. Ready for another pomodoro?'
+"

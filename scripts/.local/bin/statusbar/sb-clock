@@ -1,5 +1,15 @@
 #!/bin/sh
 
+statefile="${XDG_CACHE_HOME:-$HOME/.cache}/pomodoro"
+if [ -f "$statefile" ]; then
+	end=$(grep '^end=' "$statefile" | cut -d= -f2)
+	if [ "$end" -gt "$(date +%s)" ]; then
+		pomodoro_active=1
+	else
+		rm -f "$statefile"
+	fi
+fi
+
 clock=$(date '+%I')
 
 case "$clock" in
@@ -19,11 +29,28 @@ case "$clock" in
 esac
 
 case $BLOCK_BUTTON in
-	1) notify-send "This Month" "$(cal --color=always | sed "s/..7m/<b><span color=\"red\">/;s|..27m|</span></b>|")" && notify-send "Appointments" "$(calcurse -d3)" ;;
+	1)
+		if [ -n "$pomodoro_active" ]; then
+			notify-send "🍅 Pomodoro" "$(pomodoro status)"
+		else
+			notify-send "This Month" "$(cal --color=always | sed "s/..7m/<b><span color=\"red\">/;s|..27m|</span></b>|")" && notify-send "Appointments" "$(calcurse -d3)"
+		fi
+		;;
 	2) setsid -f "$TERMINAL" -e calcurse ;;
-	3) notify-send "📅 Time/date module" "\- Left click to show upcoming appointments for the next three days via \`calcurse -d3\` and show the month via \`cal\`
-- Middle click opens calcurse if installed" ;;
+	3) notify-send "📅 Time/date module" "\- Left click to show upcoming appointments for the next three days via \`calcurse -d3\` and show the month via \`cal\` (or the pomodoro status if one is running)
+- Middle click opens calcurse if installed
+- Scroll up starts a pomodoro: prompts for minutes or HH:MM, blank = 25min
+- Scroll down cancels the active pomodoro" ;;
+	4) [ -f "$statefile" ] || setsid -f sh -c '
+		ans=$(printf "" | dmenu -p "Pomodoro: minutes or HH:MM (blank=25)") || exit
+		pomodoro "$ans"
+	' ;;
+	5) pomodoro stop ;;
 	6) "$TERMINAL" -e "$EDITOR" "$0" ;;
 esac
 
-date "+%Y %b %d (%a) $icon%I:%M%p"
+if [ -n "$pomodoro_active" ]; then
+	echo "🍅"
+else
+	date "+%Y %b %d (%a) $icon%I:%M%p"
+fi

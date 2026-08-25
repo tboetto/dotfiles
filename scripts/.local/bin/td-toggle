@@ -1,12 +1,13 @@
 #!/bin/sh
 
-# If transmission-daemon is running, will ask to kill, else will ask to start.
+# Toggles the transmission-daemon OpenRC service running inside torrent-ns
+# (VPN-routed network namespace). If off, will ask to turn on, else will ask
+# to turn off.
 
-if pidof transmission-daemon >/dev/null ;
+if sudo rc-service torrent-transmission status 2>/dev/null | grep -q started;
 then
-	[ "$(printf "No\\nYes" | dmenu -i -p "Turn off transmission-daemon?")" = "Yes" ] && killall transmission-da && notify-send "transmission-daemon disabled."
+	[ "$(printf "No\\nYes" | dmenu -i -p "Turn off transmission-daemon?")" = "Yes" ] && sudo rc-service torrent-transmission stop && notify-send "transmission-daemon disabled."
 else
-	ifinstalled transmission-cli || exit
-	[ "$(printf "No\\nYes" | dmenu -i -p "Turn on transmission daemon?")" = "Yes" ] && transmission-daemon && notify-send "transmission-daemon enabled."
+	[ "$(printf "No\\nYes" | dmenu -i -p "Turn on transmission daemon?")" = "Yes" ] && sudo rc-service torrent-transmission start && notify-send "transmission-daemon enabled."
 fi
 sleep 3 && pkill -RTMIN+7 "${STATUSBAR:-dwmblocks}"

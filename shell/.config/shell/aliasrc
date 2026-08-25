@@ -23,7 +23,7 @@ alias \
 alias \
 	g="git" \
 	v="nvim" \
-	trem="transmission-remote" \
+	trem="transmission-remote 10.200.200.2:9091" \
 	tmux="tmux -f ~/.tmux.conf" \
 	ts="tmux new-session -s" \
 	tksv="tmux kill-server" \
@@ -43,7 +43,8 @@ case "$(uname -s)" in
 		alias \
 			ls="ls -hN --color=auto --group-directories-first" \
 			pbcopy='xsel --clipboard --input' \
-			pbpaste='xsel --clipboard --output'
+			pbpaste='xsel --clipboard --output'\
+			sshms="ssh tonyhs@192.168.1.64" \
 		;;
 	Darwin)
 		alias \
