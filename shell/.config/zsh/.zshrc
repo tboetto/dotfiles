@@ -68,7 +68,7 @@ source $TOOLS/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh
 
 # pnpm
 case "$(uname -s)" in
-	Darwin) export PNPM_HOME="${HOME}/pnpm" ;;
+	Darwin) export PNPM_HOME="${HOME}/Library/pnpm" ;;
 	Linux)  export PNPM_HOME="${HOME}/.local/share/pnpm" ;;
 esac
 case ":$PATH:" in
