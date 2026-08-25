@@ -21,6 +21,16 @@
   ;;(push '(tool-bar-lines . 0) default-frame-alist)
 #+end_src
 
+** silence harmless async native-comp warnings
+Third-party packages (elpaca builds) routinely trip "not known to be
+defined" warnings for functions guarded by fboundp/version checks, or
+forward-referenced later in the same file. These are compile-time
+noise, not runtime bugs, and popping up a warnings buffer for them on
+every async compile is more distracting than useful.
+#+begin_src emacs-lisp :tangle "early-init.el" :mkdirp yes
+(setq native-comp-async-report-warnings-errors 'silent)
+#+end_src
+
 ** Find gcc and libgccjit packages to be used for emacs on macOS
 random commit
 random commit2
@@ -2176,10 +2186,10 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
  :init
  (global-diff-hl-mode)
  (diff-hl-flydiff-mode) ; update diff-hl on the fly
- (add-hook 'dired-mode-hook 'diff-hl-dired-mode) ; show diff in dired
- :hook
- (magit-pre-refresh . diff-hl-magit-pre-refresh)
- (magit-post-refresh . diff-hl-magit-post-refresh))
+ (add-hook 'dired-mode-hook 'diff-hl-dired-mode)) ; show diff in dired
+;; NOTE: diff-hl-magit-{pre,post}-refresh hooks intentionally omitted —
+;; they iterate every visible buffer on each magit refresh, which makes
+;; staging/unstaging noticeably slow.
 #+end_src
 
 *** provide module
@@ -2222,6 +2232,35 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
  (setq magit-diff-refine-hunk t)
  (setq magit-diff-fontify-hunk 'all)
  (setq magit-diff-use-indicator-faces t)
+
+ ;; --- Performance tweaks ---
+ ;; Flip to t to profile section timings in *Messages*.
+ (setq magit-refresh-verbose nil)
+ ;; Fewer commits in the status log section (default 10).
+ (setq magit-log-section-commit-count 5)
+ ;; Skip "branches containing this commit" lookup in revision buffers.
+ (setq magit-revision-insert-related-refs nil)
+ ;; Faster ref listing on repos with many branches.
+ (setq magit-list-refs-sortby "-committerdate")
+ ;; Skip whitespace analysis in diffs (syntax fontification unaffected).
+ (setq magit-diff-paint-whitespace nil)
+ (setq magit-diff-highlight-indentation nil)
+ (setq magit-diff-highlight-trailing nil)
+ ;; Don't prompt before refresh, don't show diff on commit.
+ (setq magit-save-repository-buffers 'dontask)
+ (setq magit-commit-show-diff nil)
+ ;; Let auto-revert skip magit's own buffers.
+ (setq auto-revert-buffer-list-filter
+       'magit-auto-revert-repository-buffer-p)
+ ;; Restrict VC probing to Git so file open / save don't scan other backends.
+ (setq vc-handled-backends '(Git))
+ ;; Skip expensive commit-diff popup when composing a commit message.
+ (remove-hook 'server-switch-hook 'magit-commit-diff)
+ ;; Trim status buffer sections that aren't useful day-to-day.
+ (dolist (fn '(magit-insert-tags-header
+               magit-insert-unpushed-to-upstream-or-recent
+               magit-insert-unpulled-from-upstream))
+   (remove-hook 'magit-status-sections-hook fn))
 
  ;; Show icons for files in the Magit status and other buffers.
  (with-eval-after-load 'magit
@@ -2801,9 +2840,9 @@ npm install -g @blowmage/cursor-agent-acp
 
 *** use and config agent-shell
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-agent-shell.el" :mkdirp yes
-(use-package shell-maker :ensure t)
+  (use-package shell-maker :ensure t)
 
-(use-package acp :ensure t :after shell-maker)
+  (use-package acp :ensure t :after shell-maker)
 
 (use-package agent-shell
   :ensure (:host github :repo "xenodium/agent-shell")

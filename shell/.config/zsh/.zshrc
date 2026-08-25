@@ -63,14 +63,16 @@ setopt SHARE_HISTORY
 # export PATH="$PYENV_ROOT/bin:$PATH"
 source $TOOLS/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh
 
-export N_PREFIX="$HOME/n"; [[ :$PATH: == *":$N_PREFIX/bin:"* ]] || PATH+=":$N_PREFIX/bin"  # Added by n-install (see http://git.io/n-install-repo).
 
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 
 # pnpm
-export PNPM_HOME="/home/tony/.local/share/pnpm"
+case "$(uname -s)" in
+	Darwin) export PNPM_HOME="${HOME}/pnpm" ;;
+	Linux)  export PNPM_HOME="${HOME}/.local/share/pnpm" ;;
+esac
 case ":$PATH:" in
-  *":$PNPM_HOME:"*) ;;
-  *) export PATH="$PNPM_HOME:$PATH" ;;
+  *":$PNPM_HOME/bin:"*) ;;
+  *) export PATH="$PNPM_HOME/bin:$PATH" ;;
 esac
 # pnpm end

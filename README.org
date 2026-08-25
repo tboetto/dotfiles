@@ -8,6 +8,7 @@ Personal dotfiles managed with [[https://www.gnu.org/software/stow/][GNU Stow]].
 | Package   | Description                                        |
 |-----------+----------------------------------------------------|
 | =audio=   | PipeWire and PulseAudio daemon configuration       |
+| =claude=  | Claude Code global instructions (CLAUDE.md)        |
 | =desktop= | Browser flags and fontconfig                       |
 | =emacs=   | GNU Emacs configuration (literate, modular)        |
 | =music=   | MPD and ncmpcpp configuration                      |
@@ -41,13 +42,20 @@ stow emacs
 ** Deploy all packages
 
 #+begin_src sh
-stow audio desktop emacs music nvim scripts shell x11
+stow audio claude desktop emacs music nvim scripts shell x11
 #+end_src
 
 Stow creates symlinks from =~= into the corresponding package directory.
 Run from the root of this repository (i.e. =~/dotfiles=).
 
 * Package notes
+
+** claude
+
+Symlinks to =~/.claude/CLAUDE.md=. Kept free of anything specific to a
+work enterprise or private repo, since this file is tracked in a personal
+dotfiles repo; repo-specific instructions belong in that repo's own
+=AGENTS.md= or =CLAUDE.md= instead.
 
 ** emacs
 

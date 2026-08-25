@@ -31,6 +31,35 @@
  (setq magit-diff-fontify-hunk 'all)
  (setq magit-diff-use-indicator-faces t)
 
+ ;; --- Performance tweaks ---
+ ;; Flip to t to profile section timings in *Messages*.
+ (setq magit-refresh-verbose nil)
+ ;; Fewer commits in the status log section (default 10).
+ (setq magit-log-section-commit-count 5)
+ ;; Skip "branches containing this commit" lookup in revision buffers.
+ (setq magit-revision-insert-related-refs nil)
+ ;; Faster ref listing on repos with many branches.
+ (setq magit-list-refs-sortby "-committerdate")
+ ;; Skip whitespace analysis in diffs (syntax fontification unaffected).
+ (setq magit-diff-paint-whitespace nil)
+ (setq magit-diff-highlight-indentation nil)
+ (setq magit-diff-highlight-trailing nil)
+ ;; Don't prompt before refresh, don't show diff on commit.
+ (setq magit-save-repository-buffers 'dontask)
+ (setq magit-commit-show-diff nil)
+ ;; Let auto-revert skip magit's own buffers.
+ (setq auto-revert-buffer-list-filter
+       'magit-auto-revert-repository-buffer-p)
+ ;; Restrict VC probing to Git so file open / save don't scan other backends.
+ (setq vc-handled-backends '(Git))
+ ;; Skip expensive commit-diff popup when composing a commit message.
+ (remove-hook 'server-switch-hook 'magit-commit-diff)
+ ;; Trim status buffer sections that aren't useful day-to-day.
+ (dolist (fn '(magit-insert-tags-header
+               magit-insert-unpushed-to-upstream-or-recent
+               magit-insert-unpulled-from-upstream))
+   (remove-hook 'magit-status-sections-hook fn))
+
  ;; Show icons for files in the Magit status and other buffers.
  (with-eval-after-load 'magit
    (setq magit-format-file-function #'magit-format-file-nerd-icons)))

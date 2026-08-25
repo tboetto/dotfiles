@@ -14,7 +14,6 @@ alias \
   	config='/usr/bin/git --git-dir=$HOME/.cfg/ --work-tree=$HOME' \
   	configit='GIT_DIR=$HOME/.cfg GIT_WORK_TREE=$HOME nvim -c MagitOnly' \
   	vc='GIT_DIR=$HOME/.cfg GIT_WORK_TREE=$HOME nvim' \
-	ls="ls -hN --color=auto --group-directories-first" \
 	grep="grep --color=auto" \
 	diff="diff --color=auto" \
 	ccat="highlight --out-format=ansi" \
@@ -30,8 +29,6 @@ alias \
 	tksv="tmux kill-server" \
 	ta="tmux attach -t" \
 	tls="tmux ls" \
-	pbcopy='xsel --clipboard --input' \
-	pbpaste='xsel --clipboard --output' \
 	vrc="nvim $HOME/.config/nvim" \
 	zrc="nvim $ZDOTDIR/.zshrc" \
 	arc="nvim $HOME/.config/shell/aliasrc" \
@@ -39,4 +36,17 @@ alias \
 	pxic="nvim $HOME/.local/artixinstall/pacs.csv" \
 	gpa="git apply --reject --whitespace=fix" \
 	gcp="git cherry-pick" \
-	magit="nvim -c MagitOnly" \
+	magit="nvim -c MagitOnly"
+
+case "$(uname -s)" in
+	Linux)
+		alias \
+			ls="ls -hN --color=auto --group-directories-first" \
+			pbcopy='xsel --clipboard --input' \
+			pbpaste='xsel --clipboard --output'
+		;;
+	Darwin)
+		alias \
+			cors='open -n -a /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --args --user-data-dir="/tmp/chrome_dev_test" --disable-web-security'
+		;;
+esac

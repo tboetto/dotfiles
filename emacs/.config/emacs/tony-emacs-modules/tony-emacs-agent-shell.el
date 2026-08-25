@@ -1,6 +1,6 @@
 (use-package shell-maker :ensure t)
 
-(use-package acp :ensure t :after shell-maker)
+  (use-package acp :ensure t :after shell-maker)
 
 (use-package agent-shell
   :ensure (:host github :repo "xenodium/agent-shell")
