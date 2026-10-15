@@ -1,90 +1,61 @@
+;;; tony-emacs-treesit.el --- Tree-sitter grammars and major mode remapping  -*- lexical-binding: t; -*-
 (use-package
  treesit
- :mode
- (("\\.html\\'" . ngxhtml-ts-mode)
-  ("\\.js\\'" . typescript-ts-mode)
-  ("\\.mjs\\'" . typescript-ts-mode)
-  ("\\.mts\\'" . typescript-ts-mode)
-  ("\\.cjs\\'" . typescript-ts-mode)
-  ("\\.ts\\'" . typescript-ts-mode)
-  ("\\.jsx\\'" . tsx-ts-mode)
-  ("\\.json\\'" . json-ts-mode)
-  ("\\.Dockerfile\\'" . dockerfile-ts-mode)
-  ("\\.prisma\\'" . prisma-ts-mode)
-  ("\\.yaml\\'" . yaml-ts-mode)
-  ;; More modes defined here...
-  )
- :preface
- (defun tb/setup-install-grammars ()
-   "Install Tree-sitter grammars if they are absent."
-   (interactive)
-   (dolist
-       (grammar
-        '((css . ("https://github.com/tree-sitter/tree-sitter-css"))
-          (bash "https://github.com/tree-sitter/tree-sitter-bash")
-          (html "https://github.com/tree-sitter/tree-sitter-html")
-          (angular
-           "https://github.com/dlvandenberg/tree-sitter-angular")
-          (javascript
-           .
-           ("https://github.com/tree-sitter/tree-sitter-javascript"))
-          (json . ("https://github.com/tree-sitter/tree-sitter-json"))
-          (python
-           . ("https://github.com/tree-sitter/tree-sitter-python"))
-          (markdown
-           "https://github.com/ikatyang/tree-sitter-markdown")
-          (make "https://github.com/alemuller/tree-sitter-make")
-          (elisp "https://github.com/Wilfred/tree-sitter-elisp")
-          (cmake "https://github.com/uyha/tree-sitter-cmake")
-          (c "https://github.com/tree-sitter/tree-sitter-c")
-          (gdscript
-           "https://github.com/PrestonKnopp/tree-sitter-gdscript")
-          (cpp "https://github.com/tree-sitter/tree-sitter-cpp")
-          (toml
-           .
-           ("https://github.com/tree-sitter/tree-sitter-toml"
-            "v0.5.1"))
-          (tsx
-           .
-           ("https://github.com/tree-sitter/tree-sitter-typescript"
-            "v0.20.3"
-            "tsx/src"))
-          (typescript
-           .
-           ("https://github.com/tree-sitter/tree-sitter-typescript"
-            "v0.20.3"
-            "typescript/src"))
-          (yaml . ("https://github.com/ikatyang/tree-sitter-yaml"))
-          (prisma "https://github.com/victorhqc/tree-sitter-prisma")))
-     (add-to-list 'treesit-language-source-alist grammar)
-     ;; Only install `grammar' if we don't already have it
-     ;; installed. However, if you want to *update* a grammar then
-     ;; this obviously prevents that from happening.
-     (unless (treesit-language-available-p (car grammar))
-       (treesit-install-language-grammar (car grammar)))))
+ :ensure nil ; built in
+ :custom
+ ;; Install a grammar the first time a mode actually needs it, rather than
+ ;; looping over every recipe on each startup. Set to `always' to skip the
+ ;; confirmation prompt.
+ (treesit-auto-install-grammar 'ask)
+ (treesit-font-lock-level 6)
+ :config
+ (dolist (grammar
+          '((angular "https://github.com/dlvandenberg/tree-sitter-angular")
+            (bash "https://github.com/tree-sitter/tree-sitter-bash")
+            (c "https://github.com/tree-sitter/tree-sitter-c")
+            (cmake "https://github.com/uyha/tree-sitter-cmake")
+            (cpp "https://github.com/tree-sitter/tree-sitter-cpp")
+            (css "https://github.com/tree-sitter/tree-sitter-css")
+            (elisp "https://github.com/Wilfred/tree-sitter-elisp")
+            (gdscript "https://github.com/PrestonKnopp/tree-sitter-gdscript")
+            (html "https://github.com/tree-sitter/tree-sitter-html")
+            (javascript "https://github.com/tree-sitter/tree-sitter-javascript")
+            (json "https://github.com/tree-sitter/tree-sitter-json")
+            (make "https://github.com/alemuller/tree-sitter-make")
+            (markdown "https://github.com/ikatyang/tree-sitter-markdown")
+            (prisma "https://github.com/victorhqc/tree-sitter-prisma")
+            (python "https://github.com/tree-sitter/tree-sitter-python")
+            (toml "https://github.com/tree-sitter/tree-sitter-toml" "v0.5.1")
+            (tsx "https://github.com/tree-sitter/tree-sitter-typescript"
+                 "v0.20.3" "tsx/src")
+            (typescript "https://github.com/tree-sitter/tree-sitter-typescript"
+                        "v0.20.3" "typescript/src")
+            (yaml "https://github.com/ikatyang/tree-sitter-yaml")))
+   (add-to-list 'treesit-language-source-alist grammar)))
 
- ;; Optional, but recommended. Tree-sitter enabled major modes are
- ;; distinct from their ordinary counterparts.
- ;;
- ;; You can remap major modes with `major-mode-remap-alist'. Note
- ;; that this does *not* extend to hooks! Make sure you migrate them
- ;; also
- (dolist (mapping
-          '((python-mode . python-ts-mode)
-            (css-mode . css-ts-mode)
-            (typescript-mode . typescript-ts-mode)
-            (js-mode . typescript-ts-mode)
-            (js2-mode . typescript-ts-mode)
-            (c-mode . c-ts-mode)
-            (c++-mode . c++-ts-mode)
-            (c-or-c++-mode . c-or-c++-ts-mode)
-            (bash-mode . bash-ts-mode)
-            (css-mode . css-ts-mode)
-            (json-mode . json-ts-mode)
-            (js-json-mode . json-ts-mode)
-            (sh-mode . bash-ts-mode)
-            (sh-base-mode . bash-ts-mode)))
-   (add-to-list 'major-mode-remap-alist mapping))
- :config (tb/setup-install-grammars) (setq treesit-font-lock-level 6))
+(setopt treesit-enabled-modes t)
+
+;; Deliberate deviations from `treesit-major-mode-remap-alist', which sends
+;; JS to `js-ts-mode'. typescript-ts-mode handles plain JS better for this
+;; codebase. Note core's `auto-mode-alist' yields `javascript-mode' (an alias
+;; of `js-mode') for .js, so both symbols need an entry. json-mode and
+;; js2-mode are third-party and absent from the built-in table.
+(dolist (mapping '((js-mode . typescript-ts-mode)
+                   (javascript-mode . typescript-ts-mode)
+                   (js2-mode . typescript-ts-mode)
+                   (json-mode . json-ts-mode)))
+  (add-to-list 'major-mode-remap-alist mapping))
+
+(dolist (entry '(("\\.js\\'" . typescript-ts-mode)
+                 ("\\.mjs\\'" . typescript-ts-mode)
+                 ("\\.cjs\\'" . typescript-ts-mode)
+                 ("\\.ts\\'" . typescript-ts-mode)
+                 ("\\.mts\\'" . typescript-ts-mode)
+                 ("\\.jsx\\'" . tsx-ts-mode)
+                 ("\\.json\\'" . json-ts-mode)
+                 ("\\.yaml\\'" . yaml-ts-mode)
+                 ("\\.Dockerfile\\'" . dockerfile-ts-mode)
+                 ("\\.prisma\\'" . prisma-ts-mode)))
+  (add-to-list 'auto-mode-alist entry))
 
 (provide 'tony-emacs-treesit)

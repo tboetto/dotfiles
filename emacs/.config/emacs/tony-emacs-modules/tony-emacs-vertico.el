@@ -1,3 +1,4 @@
+;;; tony-emacs-vertico.el --- Vertical minibuffer completion UI  -*- lexical-binding: t; -*-
 (use-package
  vertico
  :ensure t

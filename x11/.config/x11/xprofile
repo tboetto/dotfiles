@@ -3,7 +3,7 @@
 [[ $(hostname) == *"desktop"* ]] && ISDESKTOP=true || ISDESKTOP=false;
 [[ $(hostname) == *"laptop"* ]] && ISLAPTOP=true || ISLAPTOP=false;
 
-xrandr --auto &
+$ISLAPTOP && xrandr --auto &	# laptop only: on the desktop, trimonarr sets the layout and --auto would race it, putting the S9 at 4K
 xrandr --dpi 220 &
 
 dwmblocks &

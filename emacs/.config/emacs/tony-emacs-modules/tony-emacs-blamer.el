@@ -1,3 +1,4 @@
+;;; tony-emacs-blamer.el --- Inline git blame  -*- lexical-binding: t; -*-
 (use-package
  blamer
  :ensure (:host github :repo "artawower/blamer.el")

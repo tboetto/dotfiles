@@ -1,0 +1,42 @@
+#!/bin/sh
+# s9reset: bring the ViewFinity S9 (X output DP-0) back without replugging.
+# Handles both ways it drops out:
+#   1. the S9 stops asserting hotplug, so DP-0 shows as disconnected
+#   2. DP-0 still shows as connected at 5K, but the S9 shows no picture
+# What recovers it is restarting both ends together: blank the screens long enough
+# for the S9 to drop into standby, wake them, then do a real modeset on DP-0
+# (re-applying an identical layout is a no-op and won't retrain the link).
+#   usage: s9reset [layout-cmd]   (default: trimonarr)
+#   S9_STANDBY_SECS sets how long the screens stay blanked (default 20)
+
+out=DP-0
+layout="${1:-trimonarr}"
+standby="${S9_STANDBY_SECS:-20}"
+edid_copy="$HOME/.local/share/s9-edid.bin"
+
+for i in 1 2 3 4 5; do
+	for c in /sys/class/drm/card*-DP-*; do
+		grep -q '^disconnected' "$c/status" && echo detect | sudo -n tee "$c/status" >/dev/null 2>&1
+	done
+	if xrandr --query | grep -q "^$out connected"; then
+		[ -e "$edid_copy" ] || for c in /sys/class/drm/card*-DP-*; do	# save the S9's EDID once (not the Planar's)
+			# sysfs reports size 0, so test for content rather than using [ -s ]
+			[ "$(head -c1 "$c/edid" | wc -c)" -eq 1 ] && ! grep -q IX2790 "$c/edid" && cp "$c/edid" "$edid_copy"
+		done
+		notify-send "s9reset" "blanking screens for ${standby}s; don't touch the mouse" 2>/dev/null
+		sleep 1
+		xset dpms force off
+		sleep "$standby"
+		xset dpms force on
+		sleep 3
+		xrandr --output "$out" --off
+		sleep 3
+		"$layout"
+		notify-send "s9reset" "$out reset (attempt $i); rerun if the S9 is still black" 2>/dev/null
+		exit 0
+	fi
+	sleep 2
+done
+
+notify-send -u critical "s9reset" "$out: no hotplug signal from the monitor; replug the cable" 2>/dev/null
+exit 1

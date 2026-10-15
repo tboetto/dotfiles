@@ -1,4 +1,5 @@
-;; taken from github.com/yolksys
+;;; tony-emacs-lsp-mode.el --- lsp-mode configuration  -*- lexical-binding: t; -*-
+    ;; taken from github.com/yolksys
 (use-package
  lsp-mode
  :diminish "LSP"
@@ -12,7 +13,7 @@
    .
    lsp-deferred))
  :custom
- (lsp-completion-provider :none) ; Using company as the provider
+ (lsp-completion-provider :none) ; corfu handles completion
  (lsp-diagnostics-provider :flycheck)
  (lsp-session-file (locate-user-emacs-file ".lsp-session"))
  (lsp-log-io nil) ; IMPORTANT! Use only for debugging! Drastically affects performance
@@ -102,6 +103,7 @@
 
 (use-package
  lsp-completion
+ :ensure nil ; ships with lsp-mode
  :no-require
  :hook ((lsp-mode . lsp-completion-mode)))
 
@@ -119,12 +121,11 @@
   lsp-ui-doc-position 'at-point))
 
 
-;; init.el
-;;;; per https://github.com/emacs-lsp/lsp-mode#performance
-(setq read-process-output-max (* 10 1024 1024)) ;; 10mb
-(setq gc-cons-threshold 200000000)
-
 ;;(add-to-list 'warning-suppress-log-types '(lsp-mode))
 ;;(add-to-list 'warning-suppress-types '(lsp-mode))
+
+;; NOTE: `gc-cons-threshold' and `read-process-output-max' used to be set here.
+;; They now live in early-init.el, since they are process-wide startup tuning
+;; rather than lsp configuration.
 
 (provide 'tony-emacs-lsp-mode)

@@ -1,3 +1,4 @@
+;;; tony-emacs-marginalia.el --- Minibuffer annotations  -*- lexical-binding: t; -*-
 ;; Enable rich annotations using the Marginalia package
 (use-package
  marginalia

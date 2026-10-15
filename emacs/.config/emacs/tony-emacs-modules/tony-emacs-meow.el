@@ -1,6 +1,7 @@
+;;; tony-emacs-meow.el --- Meow modal editing  -*- lexical-binding: t; -*-
 (defun meow-setup ()
   (setq meow-cheatsheet-layout meow-cheatsheet-layout-qwerty)
-  (meow-motion-overwrite-define-key
+  (meow-motion-define-key
    '("j" . meow-next) '("k" . meow-prev) '("<escape>" . ignore))
   (meow-leader-define-key
    ;; SPC j/k will run the original command in MOTION state.

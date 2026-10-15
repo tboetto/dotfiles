@@ -1,3 +1,4 @@
+;;; tony-emacs-diff-hl.el --- VC diff indicators in the fringe  -*- lexical-binding: t; -*-
 (use-package
  diff-hl
  :ensure t

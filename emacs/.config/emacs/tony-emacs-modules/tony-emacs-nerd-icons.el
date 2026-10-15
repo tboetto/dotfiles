@@ -1,3 +1,4 @@
+;;; tony-emacs-nerd-icons.el --- nerd-icons and its integrations  -*- lexical-binding: t; -*-
 (use-package
  nerd-icons
  :ensure t

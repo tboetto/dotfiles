@@ -1,16 +1,17 @@
-(use-package
- org
- :ensure nil
- :init
- (setopt org-confirm-babel-evaluate nil)
- (setq org-directory (expand-file-name "~/Documents/org/"))
- (setq org-imenu-depth 7)
- (setq org-log-done 'time)
- (setq org-log-into-drawer t)
- :config
- (setq org-startup-indented t)
- (add-to-list 'org-src-lang-modes '("typescript" . typescript-ts))
- )
+;;; tony-emacs-org.el --- Org mode, agenda, and export helpers  -*- lexical-binding: t; -*-
+  (use-package
+   org
+   :ensure nil
+   :init
+   (setopt org-confirm-babel-evaluate nil)
+   (setq org-directory (expand-file-name "~/Documents/org/"))
+   (setq org-imenu-depth 7)
+   (setq org-log-done 'time)
+   (setq org-log-into-drawer t)
+   :config
+   (setq org-startup-indented t)
+   (add-to-list 'org-src-lang-modes '("typescript" . typescript-ts))
+   )
 
 (use-package
   org-agenda

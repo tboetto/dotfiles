@@ -1,51 +1,20 @@
+;;; tony-emacs-fonts.el --- Font families, sizes, and fontaine presets  -*- lexical-binding: t; -*-
 (defvar my-linux-font "Aporetic Serif Mono")
 (defvar my-macos-font "Aporetic Serif Mono")
 
-(if (eq system-type 'darwin)
-    (defvar my-editor-font my-macos-font)
-  (defvar my-editor-font my-linux-font))
+(defvar my-editor-font
+  (if (eq system-type 'darwin) my-macos-font my-linux-font))
 
-(if (eq system-type 'darwin)
-    (progn
-      (defvar my-default-font my-editor-font)
-      (defvar my-variable-pitch-font "Aporetic Sans")
-      (defvar my-serif-font "Aporetic Sans"))
-  (progn
-    (defvar my-default-font my-editor-font)
-    (defvar my-variable-pitch-font "Aporetic Sans")
-    (defvar my-serif-font "Aporetic Sans")))
+(defvar my-default-font my-editor-font)
+(defvar my-variable-pitch-font "Aporetic Sans")
 
-(defun my-setup-linux-fonts ()
-  "Separate setups for fonts in WSL and regular GNU/Linux."
-  (if (getenv "WSL_DISTRO_NAME")
-      (setq
-       my-font-height 200
-       my-xxs-font-height 100
-       my-xs-font-height 125
-       my-small-font-height 150
-       my-medium-font-height 250
-       my-large-font-height 350
-       my-presentation-font-height 650)
-    (setq
-     my-font-height 200
-     my-xxs-font-height 100
-     my-xs-font-height 125
-     my-small-font-height 150
-     my-medium-font-height 250
-     my-large-font-height 350
-     my-presentation-font-height 650)))
-
-(if (eq system-type 'darwin)
-    (setq
-     my-font-height 200
-     my-xxs-font-height 100
-     my-xs-font-height 125
-     my-small-font-height 150
-     my-medium-font-height 250
-     my-large-font-height 350
-     my-presentation-font-height 650)
-
-  (my-setup-linux-fonts))
+(defvar my-font-height 200)
+(defvar my-xxs-font-height 100)
+(defvar my-xs-font-height 125)
+(defvar my-small-font-height 150)
+(defvar my-medium-font-height 250)
+(defvar my-large-font-height 350)
+(defvar my-presentation-font-height 650)
 
 (use-package
  fontaine

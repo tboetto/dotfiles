@@ -7,6 +7,7 @@
 
 ** use plists (for lsp performance)
 #+begin_src emacs-lisp :tangle "early-init.el" :mkdirp yes
+;;; early-init.el --- Pre-GUI, pre-package startup tuning  -*- lexical-binding: t; -*-
 (setenv "LSP_USE_PLISTS" "true")
 #+end_src
 
@@ -15,10 +16,29 @@
 (setq package-enable-at-startup nil)
 #+end_src
 
+** process and GC tuning
+Both values come from [[https://github.com/emacs-lsp/lsp-mode#performance][lsp-mode's performance guide]]. A large
+=gc-cons-threshold= means fewer full collections during the heavy JSON churn an LSP
+session generates; measured cost is low (32 collections totalling 0.9s across a
+22-hour session). If stalls ever do show up, reach for =gcmh= -- which adapts the
+threshold to whether you are typing or idle -- rather than a smaller constant.
+#+begin_src emacs-lisp :tangle "early-init.el" :mkdirp yes
+(setq gc-cons-threshold 200000000)        ; 200mb
+(setq read-process-output-max (* 10 1024 1024)) ; 10mb
+#+end_src
+
 ** disable toolbar before frame creation
 #+begin_src emacs-lisp :tangle "early-init.el" :mkdirp yes
   (tool-bar-mode -1)
   ;;(push '(tool-bar-lines . 0) default-frame-alist)
+#+end_src
+
+** start maximized
+Asking for this in =default-frame-alist= means the very first frame is created
+maximized. The old =window-setup-hook= + =toggle-frame-maximized= approach drew a
+small frame first and then resized it, which was visible on every launch.
+#+begin_src emacs-lisp :tangle "early-init.el" :mkdirp yes
+(add-to-list 'default-frame-alist '(fullscreen . maximized))
 #+end_src
 
 ** silence harmless async native-comp warnings
@@ -116,6 +136,7 @@ random commit2
 This is the standard install code block for elpaca
 
 #+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+;;; init.el --- Main init: elpaca bootstrap and module loading  -*- lexical-binding: t; -*-
 (defvar elpaca-installer-version 0.12)
 (defvar elpaca-directory (expand-file-name "elpaca/" user-emacs-directory))
 (defvar elpaca-builds-directory (expand-file-name "builds/" elpaca-directory))
@@ -181,10 +202,6 @@ Packages exclusively on GNU/NonGNU ELPA have explicit =:ensure= recipes in their
 
 ** Basic emacs configuration
 
-*** Start emacs maximized
-#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
-(add-hook 'window-setup-hook 'toggle-frame-maximized t)
-#+end_src
 *** Disable unneeded features
 - These settings are very commonly used to turn emacs into a more suitable editor for programmers
   
@@ -192,8 +209,7 @@ Packages exclusively on GNU/NonGNU ELPA have explicit =:ensure= recipes in their
 (setq ring-bell-function #'ignore)
 (setq inhibit-startup-message t)
 (menu-bar-mode -1)
-(tool-bar-mode -1)
-(scroll-bar-mode -1)
+(scroll-bar-mode -1) ; `tool-bar-mode' is already off in early-init.el
 #+end_src
 
 *** Enable repeat mode
@@ -219,8 +235,14 @@ By default emacs tries to lockdown and backup files. I want to be able to open a
 
 *** Enable buffer line numbers
 #+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
-(global-display-line-numbers-mode 1)
-(hl-line-mode 1)
+;; Line numbers only where they earn their keep -- not in org, magit, dired,
+;; vterm or the agent-shell sidebar.
+(dolist (hook '(prog-mode-hook conf-mode-hook))
+  (add-hook hook #'display-line-numbers-mode))
+
+;; `hl-line-mode' is buffer-local: calling it here only ever highlighted
+;; whichever buffer happened to be current during init. Use the global mode.
+(global-hl-line-mode 1)
 #+end_src
 
 *** Enable history settings
@@ -239,8 +261,8 @@ By default emacs tries to lockdown and backup files. I want to be able to open a
 
 *** Disable cursors in the minibuffer prompt
 #+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
-(setq minibuffer-prompt-properties
-      '(read-only t cursor-intangible t face minibuffer-prompt))
+;; `minibuffer-prompt-properties' already defaults to exactly these values on
+;; Emacs 31, so only the hook is needed.
 (add-hook 'minibuffer-setup-hook #'cursor-intangible-mode)
 #+end_src
 
@@ -263,21 +285,25 @@ By default emacs tries to lockdown and backup files. I want to be able to open a
 
 *** Create ~hyper~ modifier functionality
 #+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
-(setq w32-pass-apps-to-system nil)
-(setq w32-apps-modifier 'hyper)
+;; `w32-pass-apps-to-system' / `w32-apps-modifier' only get a real `defvar' from
+;; w32-fns.el, which isn't loaded on this platform, so forward-declare them to
+;; keep the byte-compiler from treating the `setq' below as a free variable.
+(defvar w32-pass-apps-to-system)
+(defvar w32-apps-modifier)
+(when (eq system-type 'windows-nt)
+  (setq w32-pass-apps-to-system nil)
+  (setq w32-apps-modifier 'hyper))
 
-;;(defconst my-leader (if (eq system-type 'darwin) "SPC" "SPC"))
 (defun enable-hyper-super-modifiers-linux-x ()
-  ;; on nowadays linux, <windows> key is usually configured to Super
+  "Make the <menu> key act as the hyper modifier.
+On modern Linux the <windows> key is usually already mapped to Super.
+Note: for H-s you must release <menu> before pressing `s'."
+  (define-key key-translation-map [menu] 'event-apply-hyper-modifier))
 
-  ;; menu key as hyper (Note: for H-s, you need to release <menu> key before pressing 's')
-  (define-key key-translation-map [menu] 'event-apply-hyper-modifier) ;H-
-  ;;(define-key key-translation-map [apps] 'event-apply-hyper-modifier)
-
-  ;; by default, Emacs bind <menu> to execute-extended-command (same as M-x) now <menu> defined as 'hyper, we need to press <menu> twice to get <H-menu> (global-set-key (kbd "<H-menu>") 'execute-extended-command)
-  )
-
-(enable-hyper-super-modifiers-linux-x)
+;; Only meaningful under X -- there is no <menu> key event to translate in a
+;; terminal frame, and macOS has its own modifier handling.
+(when (eq window-system 'x)
+  (enable-hyper-super-modifiers-linux-x))
 #+end_src
 
 *** Vertico prompt indicator
@@ -285,6 +311,7 @@ By default emacs tries to lockdown and backup files. I want to be able to open a
 ;; Vertico settings
 ;; Add prompt indicator to `completing-read-multiple'.
 ;; We display [CRM<separator>], e.g., [CRM,] if the separator is a comma.
+(require 'crm) ; for `crm-separator'
 (defun crm-indicator (args)
   (cons
    (format "[CRM%s] %s"
@@ -319,23 +346,22 @@ config
   (require 'tony-emacs-visual-fill-column)
   (require 'tony-emacs-org)
   (require 'tony-emacs-project)
-  ;;(require 'tony-emacs-treemacs)
   (require 'tony-emacs-pulsar)
   (require 'tony-emacs-fonts)
   (require 'tony-emacs-nerd-icons)
   (require 'tony-emacs-tweakers)
   (require 'tony-emacs-which-key)
   (require 'tony-emacs-godot)
-  ;;(require 'tony-emacs-prot-themes)
-  ;;(require 'tony-emacs-doom-themes)
-  ;;(require 'tony-emacs-solaire-mode)
   (require 'tony-emacs-themes)
+  ;; Must follow `tony-emacs-themes': solaire advises `load-theme' to swap
+  ;; backgrounds, so the themes need to be available first.
+  (require 'tony-emacs-solaire-mode)
   (require 'tony-emacs-doom-modeline)
-  ;(require 'tony-emacs-textsize)
   (require 'tony-emacs-vertico)
   (require 'tony-emacs-marginalia)
   (require 'tony-emacs-orderless)
   (require 'tony-emacs-consult)
+  (require 'tony-emacs-embark)
   (require 'tony-emacs-diff-hl)
   (require 'tony-emacs-magit)
   (require 'tony-emacs-blamer)
@@ -347,7 +373,6 @@ config
   (require 'tony-emacs-treesit)
   (require 'tony-emacs-languages)
   (require 'tony-emacs-lsp-mode)
-  ;;(require 'tony-emacs-lsp-treemacs)
   (require 'tony-emacs-ngx)
   (require 'tony-emacs-lsp-biome)
   (require 'tony-emacs-info-manuals)
@@ -405,7 +430,8 @@ config
 
 ;;;for ngxhtml start
 (defgroup ngx-group nil
-  "ngx group")
+  "Faces for Angular template syntax in `ngxhtml-ts-mode'."
+  :group 'languages)
 
 (defface ngx-control-face
   '((((class color) (min-colors 88) (background light))
@@ -645,6 +671,7 @@ config
 Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-ls) trust the corporate CA bundle (~/.certs/ca-bundle.pem)
 
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-miscellaneous.el" :mkdirp yes
+;;; tony-emacs-miscellaneous.el --- Odds and ends: shell env, compat, markdown  -*- lexical-binding: t; -*-
 (use-package
  exec-path-from-shell
  :ensure t
@@ -677,6 +704,7 @@ Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-l
 ** ~visual-fill-column.el~
 *** configure and install package
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-visual-fill-column.el" :mkdirp yes
+;;; tony-emacs-visual-fill-column.el --- Centered, width-limited visual line wrapping  -*- lexical-binding: t; -*-
   (use-package visual-fill-column
   :ensure t
   :hook (org-mode . visual-line-mode)
@@ -697,10 +725,12 @@ Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-l
 ** ~languages.el~
 *** shell
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-languages.el" :mkdirp yes
+;;; tony-emacs-languages.el --- Per-language modes: shell, lisp, racket  -*- lexical-binding: t; -*-
 (use-package
  sh-mode
- :ensure nil ;; built in
- :mode "\\.zsh\\'" "\\.sh\\'")
+ :ensure nil ; built in
+ ;; `treesit-enabled-modes' remaps sh-mode to bash-ts-mode from here.
+ :mode ("\\.zsh\\'" "\\.sh\\'"))
 #+end_src
 
 *** lisp
@@ -709,10 +739,11 @@ Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-l
 (use-package
  aggressive-indent
  :ensure t
+ ;; NOTE: `elisp-mode' used to be in this list. It is not a major mode -- the
+ ;; mode is `emacs-lisp-mode' -- so it only interned a hook nothing ever ran.
  :hook
-
- '(clojure-mode
-   elisp-mode emacs-lisp-mode lisp-mode common-lisp-mode scheme-mode))
+ (clojure-mode
+  emacs-lisp-mode lisp-mode common-lisp-mode scheme-mode))
 #+end_src
 
 **** smart-parens
@@ -729,7 +760,6 @@ Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-l
 **** racket
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-languages.el" :mkdirp yes
   (setq racket-program "/usr/bin/racket")
-  (setq org-babel-debug t)
 
   (use-package
    racket-mode
@@ -752,6 +782,7 @@ This is the official package managed by Godot
 
 **** use-package
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-godot.el" :mkdirp yes
+;;; tony-emacs-godot.el --- Godot / GDScript support  -*- lexical-binding: t; -*-
   (use-package gdscript-mode
     :ensure (:host github :repo "godotengine/emacs-gdscript-mode")
     :hook ((gdscript-mode . lsp-deferred)
@@ -772,6 +803,7 @@ Setup org mode basics:
 - also logged status updates should be foldable and separate from rest
   of header content
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
+;;; tony-emacs-org.el --- Org mode, agenda, and export helpers  -*- lexical-binding: t; -*-
   (use-package
    org
    :ensure nil
@@ -894,6 +926,7 @@ Setup org mode basics:
 ** ~denote.el~
 *** use and config denote
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-denote.el" :mkdirp yes
+;;; tony-emacs-denote.el --- Denote note-taking stack  -*- lexical-binding: t; -*-
 (use-package
  denote
  :ensure (:host github :repo "protesilaos/denote")
@@ -1070,6 +1103,7 @@ possible obsidian usage
 
 ** ~project.el~
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-project.el" :mkdirp yes
+;;; tony-emacs-project.el --- project.el tweaks  -*- lexical-binding: t; -*-
 (use-package project
   :ensure nil
   :bind (:map project-prefix-map
@@ -1083,125 +1117,17 @@ possible obsidian usage
 (provide 'tony-emacs-project)
 #+end_src
 
-** ~treemacs.el~
-#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-treemacs.el" :mkdirp yes
-;;for treemacs
-(use-package
- treemacs
- :ensure t
- :defer t
- :config
- (progn
-   (setq
-    treemacs-collapse-dirs
-    (if treemacs-python-executable
-        3
-      0)
-    treemacs-deferred-git-apply-delay 0.5
-    treemacs-directory-name-transformer #'identity
-    treemacs-display-in-side-window t
-    treemacs-eldoc-display 'simple
-    treemacs-file-event-delay 2000
-    treemacs-file-extension-regex treemacs-last-period-regex-value
-    treemacs-file-follow-delay 0.2
-    treemacs-file-name-transformer #'identity
-    treemacs-follow-after-init t
-    treemacs-expand-after-init t
-    treemacs-find-workspace-method 'find-for-file-or-pick-first
-    treemacs-git-command-pipe ""
-    treemacs-goto-tag-strategy 'refetch-index
-    treemacs-header-scroll-indicators '(nil . "^^^^^^")
-    treemacs-hide-dot-git-directory t
-    treemacs-indentation 2
-    treemacs-indentation-string " "
-    treemacs-is-never-other-window nil
-    treemacs-max-git-entries 5000
-    treemacs-missing-project-action 'ask
-    treemacs-move-files-by-mouse-dragging t
-    treemacs-move-forward-on-expand nil
-    treemacs-no-png-images nil
-    treemacs-no-delete-other-windows t
-    treemacs-project-follow-cleanup nil
-    treemacs-persist-file (expand-file-name ".cache/treemacs-persist" user-emacs-directory)
-    treemacs-position 'left
-    treemacs-read-string-input 'from-child-frame
-    treemacs-recenter-distance 0.1
-    treemacs-recenter-after-file-follow nil
-    treemacs-recenter-after-tag-follow nil
-    treemacs-recenter-after-project-jump 'always
-    treemacs-recenter-after-project-expand 'on-distance
-    treemacs-litter-directories '("/node_modules" "/.venv" "/.cask")
-    treemacs-project-follow-into-home nil
-    treemacs-show-cursor nil
-    treemacs-show-hidden-files t
-    treemacs-silent-filewatch nil
-    treemacs-silent-refresh nil
-    treemacs-sorting 'alphabetic-asc
-    treemacs-select-when-already-in-treemacs 'move-back
-    treemacs-space-between-root-nodes t
-    treemacs-tag-follow-cleanup t
-    treemacs-tag-follow-delay 1.5
-    treemacs-text-scale nil
-    treemacs-user-mode-line-format nil
-    treemacs-user-header-line-format nil
-    treemacs-wide-toggle-width 70
-    treemacs-width 35
-    treemacs-width-increment 1
-    treemacs-width-is-initially-locked t
-    treemacs-workspace-switch-cleanup nil)
-   ;; The default width and height of the icons is 22 pixels. If you are
-   ;; using a Hi-DPI display, uncomment this to double the icon size.
-   ;;(treemacs-resize-icons 44)
-   (treemacs-follow-mode t)
-   (treemacs-filewatch-mode t)
-   (treemacs-fringe-indicator-mode 'always)
-   (when treemacs-python-executable
-     (treemacs-git-commit-diff-mode t))
-
-   (pcase (cons
-           (not (null (executable-find "git")))
-           (not (null treemacs-python-executable)))
-     (`(t . t) (treemacs-git-mode 'deferred))
-     (`(t . _) (treemacs-git-mode 'simple)))
-
-   (treemacs-hide-gitignored-files-mode nil))
- :bind
- (:map
-  global-map
-  ("M-0" . treemacs-select-window)
-  ("C-x t 1" . treemacs-delete-other-windows)
-  ("C-x t t" . treemacs)
-  ("C-x t d" . treemacs-select-directory)
-  ("C-x t B" . treemacs-bookmark)
-  ("C-x t C-t" . treemacs-find-file)
-  ("C-x t M-t" . treemacs-find-tag)))
-(use-package
- treemacs-icons-dired
- :hook (dired-mode . treemacs-icons-dired-enable-once)
- :ensure t)
-;;(use-package treemacs-magit
-;;  :after (treemacs magit)
-;;  :ensure t)
-;;(use-package treemacs-persp ;;treemacs-perspective if you use perspective.el vs. persp-mode
-;; :after (treemacs persp-mode) ;;or perspective vs. persp-mode
-;;  :ensure t
-;;  :config (treemacs-set-scope-type 'Perspectives))
-;;(use-package treemacs-tab-bar ;;treemacs-tab-bar if you use tab-bar-mode
-;;  :after (treemacs)
-;;  :ensure t
-;;  :config (treemacs-set-scope-type 'Tabs))
-(treemacs-start-on-boot)
-
-
-(provide 'tony-emacs-treemacs)
-#+end_src
-
 ** ~tweakers.el~
 
-*** use and config anzu
-Display number of matches in modeline when searching
+*** show match counts while searching
+Emacs has done this natively since 27 via =isearch-lazy-count=, which renders
+=(3/12)= in the search prompt. This replaces the =anzu= package, which showed the
+same information in the modeline.
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-tweakers.el" :mkdirp yes
-(use-package anzu :ensure t :config (global-anzu-mode))
+;;; tony-emacs-tweakers.el --- Small quality-of-life commands and modes  -*- lexical-binding: t; -*-
+(setopt isearch-lazy-count t
+        lazy-count-prefix-format "(%s/%s) "
+        lazy-count-suffix-format nil)
 #+end_src
 
 *** use and configure surround
@@ -1239,7 +1165,7 @@ Path is relative to the project root, or `default-directory' if no project."
            ((derived-mode-p 'dired-mode) (dired-get-file-for-visit))
            ((buffer-file-name) (buffer-file-name))
            (t (error "No file associated with this buffer"))))
-         (root (or (when-let ((proj (project-current)))
+         (root (or (when-let* ((proj (project-current)))
                      (project-root proj))
                    default-directory))
          (relative (file-relative-name file-path root))
@@ -1276,9 +1202,10 @@ Chrome. Useful for previewing Markdown via the browser's Markdown extension.
 ** ~meow.el~
 *** setup meow config
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-meow.el" :mkdirp yes
+;;; tony-emacs-meow.el --- Meow modal editing  -*- lexical-binding: t; -*-
 (defun meow-setup ()
   (setq meow-cheatsheet-layout meow-cheatsheet-layout-qwerty)
-  (meow-motion-overwrite-define-key
+  (meow-motion-define-key
    '("j" . meow-next) '("k" . meow-prev) '("<escape>" . ignore))
   (meow-leader-define-key
    ;; SPC j/k will run the original command in MOTION state.
@@ -1383,7 +1310,10 @@ Chrome. Useful for previewing Markdown via the browser's Markdown extension.
 ** ~which-key.el~
 *** setup which key
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-which-key.el" :mkdirp yes
-(use-package which-key :ensure t :config (which-key-mode))
+;;; tony-emacs-which-key.el --- which-key (built in since Emacs 30)  -*- lexical-binding: t; -*-
+(use-package which-key
+ :ensure nil ; built in since Emacs 30
+ :config (which-key-mode))
 #+end_src
 
 *** provide module
@@ -1394,17 +1324,16 @@ Chrome. Useful for previewing Markdown via the browser's Markdown extension.
 *** Themes directory
 
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
-(setopt custom-theme-directory "~/.config/emacs/themes/")
+;;; tony-emacs-themes.el --- Theme packages and switching commands  -*- lexical-binding: t; -*-
+(setopt custom-theme-directory (locate-user-emacs-file "themes/"))
+
+;; Defined in tony-lisp/remember-last-theme.el, which loads after this file.
+(declare-function my-load-theme "remember-last-theme" (&optional theme))
 #+end_src
 *** Set custom themes safe
 
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
 (setq custom-safe-themes t)
-#+end_src
-*** Hooks
-
-#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
-(add-hook 'after-make-frame-functions #'my-load-theme-in-all-frames)
 #+end_src
 *** Modus themes
 
@@ -1497,10 +1426,53 @@ Chrome. Useful for previewing Markdown via the browser's Markdown extension.
 Based on theme from Jonathan Blow's livestreams.
 
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
+(defun tony/lexbind-cookie-add-to-file (file)
+  "Add a `lexical-binding' cookie to FILE's first line if it lacks one.
+Idempotent: does nothing if the cookie is already present. Note this dirties
+the package's git worktree if FILE lives under elpaca/sources; if
+`elpaca-update' ever balks, run `git checkout -- .' in that source dir."
+  (when (file-exists-p file)
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (unless (search-forward "lexical-binding" (line-end-position) t)
+        (end-of-line)
+        (insert "  -*- lexical-binding: t; -*-")
+        (write-region (point-min) (point-max) file nil 'quiet)))))
+
+(defun tony/add-lexbind-cookie (e)
+  "Elpaca `:build' step: patch E's main file via `tony/lexbind-cookie-add-to-file'.
+For third-party packages that ship without a `lexical-binding' cookie, so
+Emacs 31 warns on every load. Only runs on a package's first build --
+`elpaca<-builtp' is just `(file-exists-p build-dir)', so once a package has
+been built once, every later startup takes the two-step
+`elpaca--pre-built-steps' path and skips `:build' forever. See
+`tony/ensure-lexbind-cookie' for the self-healing counterpart that covers
+that case."
+  (when-let* ((dir (elpaca<-source-dir e))
+              (file (expand-file-name (format "%s.el" (elpaca<-package e)) dir)))
+    (tony/lexbind-cookie-add-to-file file))
+  (elpaca-continue e))
+
+(defun tony/ensure-lexbind-cookie (package)
+  "Patch PACKAGE's built file via `tony/lexbind-cookie-add-to-file', if built.
+Meant for a `use-package' `:init' form, which -- unlike elpaca's `:build'
+steps -- always runs at startup regardless of whether the package was
+already built in a previous session. Belt-and-suspenders alongside
+`tony/add-lexbind-cookie': fixes the common case where the build directory
+already existed before this fix was added, with no manual rebuild needed."
+  (tony/lexbind-cookie-add-to-file
+   (expand-file-name (format "%s/%s.el" package package) elpaca-builds-directory)))
+
+;; Upstream naysayer has no `lexical-binding' cookie (dormant since 2025-05)
+;; and Emacs 31 warns on every load, so patch it as a build step, and again
+;; (self-healing, in case the build step above was skipped) in :init.
 (use-package
  naysayer-theme
- :ensure t
+ :ensure
+ (:build (:before elpaca-build-link tony/add-lexbind-cookie))
  :init
+ (tony/ensure-lexbind-cookie "naysayer-theme")
  (defun my-naysayer-theme ()
    "Clear previous theme and load naysayer."
    (interactive)
@@ -1575,11 +1547,16 @@ Inspired by Plan 9 Acme & Sam.
 *** Functions
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-themes.el" :mkdirp yes
   (use-package remember-last-theme
+    :ensure nil ; local, in tony-lisp/
     :after (acme-theme kaolin-themes naysayer-theme doom-themes doric-themes standard-themes ef-themes modus-themes)
     :config
     (remember-theme-load)
     (add-hook 'kill-emacs-hook 'remember-theme-save)
-    )
+    ;; Re-apply the theme in frames made later by emacsclient, otherwise the
+    ;; menu bar keeps the theme the server started with. Hooked here rather
+    ;; than at the top of this file because `remember-last-theme' is what
+    ;; defines the function.
+    (add-hook 'after-make-frame-functions #'my-load-theme-in-all-frames))
 #+end_src
 
 *** Provide module
@@ -1590,6 +1567,7 @@ Inspired by Plan 9 Acme & Sam.
 ** ~solaire-mode.el~
 *** use and config solaire mode
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-solaire-mode.el" :mkdirp yes
+;;; tony-emacs-solaire-mode.el --- Dim non-file buffers  -*- lexical-binding: t; -*-
 (use-package solaire-mode :ensure t :config (solaire-global-mode +1))
 #+end_src
 
@@ -1601,6 +1579,7 @@ Inspired by Plan 9 Acme & Sam.
 ** ~doom-modeline.el~
 *** use and config doom modeline
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-doom-modeline.el" :mkdirp yes
+;;; tony-emacs-doom-modeline.el --- doom-modeline  -*- lexical-binding: t; -*-
 (use-package doom-modeline :ensure t :init (doom-modeline-mode 1))
 #+end_src
 
@@ -1609,74 +1588,9 @@ Inspired by Plan 9 Acme & Sam.
 (provide 'tony-emacs-doom-modeline)
 #+end_src
 
-** ~textsize.el~
-*** use and config textsize
-#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-textsize.el" :mkdirp yes
-(use-package
- textsize
- :ensure t
- :init (textsize-mode)
- ;; Can set macOS specific font size if necessary
- :custom
- (textsize-default-points
-  (if (eq system-type 'darwin)
-      15
-    15))
- :config (textsize-fix-frame)
- (customize-set-variable
-  'textsize-monitor-size-thresholds
-  '((0 . -3) (340 . 0) (600 . -1) (900 . 6) (1200 . 9)))
- (customize-set-variable
-  'textsize-pixel-pitch-thresholds '((0 . 15) (.08 . 15) (0.11 . 0))))
-#+end_src
-
-*** textsize-metrics creation
-#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-textsize.el" :mkdirp yes
-;; stole this from jmccarrell
-(defun tb/dump-frame-textsize-metrics ()
-  "Dump selected frame metrics from the currently selected frame to the *Message* buffer.
-  Intended to be helpful for debugging the choices textsize makes for a given monitor/display."
-  (interactive)
-  (let (f
-        (selected-frame))
-    (message "emacs frame geometry: X Y WIDTH HEIGHT: %s"
-             (frame-monitor-attribute 'geometry f))
-    (message "emacs monitor size WIDTH HEIGHT mm: %s"
-             (frame-monitor-attribute 'mm-size f))
-    (message "textsize monitor size  mm: %d"
-             (textsize--monitor-size-mm f))
-    (message "textsize monitor size pix: %d"
-             (textsize--monitor-size-px f))
-    (message "pixel pitch %.02f" (textsize--pixel-pitch f))
-    (message "textsize default points %d" textsize-default-points)
-    (message "textsize frame offset %d"
-             (or (frame-parameter f 'textsize-manual-adjustment) 0))
-    (message "pixel pitch adjustment %d"
-             (textsize--threshold-offset
-              textsize-pixel-pitch-thresholds
-              (textsize--pixel-pitch f)))
-    (message "monitor size adjustment %d"
-             (textsize--threshold-offset
-              textsize-monitor-size-thresholds
-              (textsize--monitor-size-mm f)))
-    (message "text size chosen: %d" (textsize--point-size f))
-    (message "default-font: WIDTHxHEIGHT %dx%d"
-             (default-font-width)
-             (default-font-height))
-    (message "resultant text area in chars WIDTHxHEIGHT %dx%d"
-             (frame-width f)
-             (frame-height f))
-    (message "default face font %s" (face-attribute 'default :font)))
-  nil)
-#+end_src
-
-*** provide textsize
-#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-textsize.el" :mkdirp yes
-(provide 'tony-emacs-textsize)
-#+end_src
-
 ** ~pulsar.el~
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-pulsar.el" :mkdirp yes
+;;; tony-emacs-pulsar.el --- Pulse the current line on jumps  -*- lexical-binding: t; -*-
   (use-package pulsar
   :ensure (:host github :repo "protesilaos/pulsar")
   :bind
@@ -1699,57 +1613,33 @@ Inspired by Plan 9 Acme & Sam.
 
 ** ~fonts.el~
 *** setup font family variables
+Top-level =defvar= only. The previous version wrapped =defvar= in =if= branches, which
+is not a top-level declaration, so under lexical binding the byte-compiler never
+marked these special and flagged every later assignment as a free variable. The
+=my-serif-font= variable was defined twice and never read, so it is gone.
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-fonts.el" :mkdirp yes
+;;; tony-emacs-fonts.el --- Font families, sizes, and fontaine presets  -*- lexical-binding: t; -*-
 (defvar my-linux-font "Aporetic Serif Mono")
 (defvar my-macos-font "Aporetic Serif Mono")
 
-(if (eq system-type 'darwin)
-    (defvar my-editor-font my-macos-font)
-  (defvar my-editor-font my-linux-font))
+(defvar my-editor-font
+  (if (eq system-type 'darwin) my-macos-font my-linux-font))
 
-(if (eq system-type 'darwin)
-    (progn
-      (defvar my-default-font my-editor-font)
-      (defvar my-variable-pitch-font "Aporetic Sans")
-      (defvar my-serif-font "Aporetic Sans"))
-  (progn
-    (defvar my-default-font my-editor-font)
-    (defvar my-variable-pitch-font "Aporetic Sans")
-    (defvar my-serif-font "Aporetic Sans")))
+(defvar my-default-font my-editor-font)
+(defvar my-variable-pitch-font "Aporetic Sans")
 #+end_src
 *** setup font size variables
+Every platform branch in the old version -- macOS vs Linux, and WSL vs regular
+Linux inside that -- set byte-for-byte identical values, so there is one set of
+sizes. Keep them as =defvar= so =fontaine-presets= can reference them.
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-fonts.el" :mkdirp yes
-(defun my-setup-linux-fonts ()
-  "Separate setups for fonts in WSL and regular GNU/Linux."
-  (if (getenv "WSL_DISTRO_NAME")
-      (setq
-       my-font-height 200
-       my-xxs-font-height 100
-       my-xs-font-height 125
-       my-small-font-height 150
-       my-medium-font-height 250
-       my-large-font-height 350
-       my-presentation-font-height 650)
-    (setq
-     my-font-height 200
-     my-xxs-font-height 100
-     my-xs-font-height 125
-     my-small-font-height 150
-     my-medium-font-height 250
-     my-large-font-height 350
-     my-presentation-font-height 650)))
-
-(if (eq system-type 'darwin)
-    (setq
-     my-font-height 200
-     my-xxs-font-height 100
-     my-xs-font-height 125
-     my-small-font-height 150
-     my-medium-font-height 250
-     my-large-font-height 350
-     my-presentation-font-height 650)
-
-  (my-setup-linux-fonts))
+(defvar my-font-height 200)
+(defvar my-xxs-font-height 100)
+(defvar my-xs-font-height 125)
+(defvar my-small-font-height 150)
+(defvar my-medium-font-height 250)
+(defvar my-large-font-height 350)
+(defvar my-presentation-font-height 650)
 #+end_src
 *** use and config fontaine
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-fonts.el" :mkdirp yes
@@ -1865,6 +1755,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 
 *** use and config nerd-icons
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-nerd-icons.el" :mkdirp yes
+;;; tony-emacs-nerd-icons.el --- nerd-icons and its integrations  -*- lexical-binding: t; -*-
 (use-package
  nerd-icons
  :ensure t
@@ -1910,6 +1801,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 
 *** use vertico and config
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-vertico.el" :mkdirp yes
+;;; tony-emacs-vertico.el --- Vertical minibuffer completion UI  -*- lexical-binding: t; -*-
 (use-package
  vertico
  :ensure t
@@ -1938,6 +1830,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 ** ~marginalia.el~
 *** use and config marginalia
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-marginalia.el" :mkdirp yes
+;;; tony-emacs-marginalia.el --- Minibuffer annotations  -*- lexical-binding: t; -*-
 ;; Enable rich annotations using the Marginalia package
 (use-package
  marginalia
@@ -1964,6 +1857,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 ** ~orderless.el~
 *** use and config orderless
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-orderless.el" :mkdirp yes
+;;; tony-emacs-orderless.el --- Orderless completion style  -*- lexical-binding: t; -*-
 (use-package
  orderless
  :ensure t
@@ -1985,6 +1879,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 ** ~consult.el~
 *** use and config consult
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-consult.el" :mkdirp yes
+;;; tony-emacs-consult.el --- Consult search and navigation commands  -*- lexical-binding: t; -*-
   ;; Example configuration for Consult
   (use-package
    consult
@@ -2129,6 +2024,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 ** ~embark.el~
 *** use and config embark
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-embark.el" :mkdirp yes
+;;; tony-emacs-embark.el --- Embark contextual actions  -*- lexical-binding: t; -*-
 (use-package
  embark
  :ensure t
@@ -2180,6 +2076,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 
 *** use and configure diff-hl
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-diff-hl.el" :mkdirp yes
+;;; tony-emacs-diff-hl.el --- VC diff indicators in the fringe  -*- lexical-binding: t; -*-
 (use-package
  diff-hl
  :ensure t
@@ -2200,6 +2097,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 ** ~magit.el~
 *** use and config magit
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-magit.el" :mkdirp yes
+;;; tony-emacs-magit.el --- Magit configuration and performance tuning  -*- lexical-binding: t; -*-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;                MAGIT               ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -2274,7 +2172,8 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 
 ** ~blamer.el~
 *** use and config blamer
-#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-blamer.el" :mkdirp yes :prologue ";;; -*- lexical-binding: t; -*-"
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-blamer.el" :mkdirp yes
+;;; tony-emacs-blamer.el --- Inline git blame  -*- lexical-binding: t; -*-
 (use-package
  blamer
  :ensure (:host github :repo "artawower/blamer.el")
@@ -2316,96 +2215,85 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 #+end_src
 
 ** ~treesit.el~
-*** use and config treesit
+*** grammars
+Emacs ships no default =treesit-language-source-alist=, so the recipes still have to
+be declared here. What changed in 31.1 is that we no longer need to *install* them
+eagerly at startup: =treesit-auto-install-grammar= (default ='ask=) installs a missing
+grammar on demand the first time a ts-mode needs it.
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-treesit.el" :mkdirp yes
+;;; tony-emacs-treesit.el --- Tree-sitter grammars and major mode remapping  -*- lexical-binding: t; -*-
 (use-package
  treesit
- :mode
- (("\\.html\\'" . ngxhtml-ts-mode)
-  ("\\.js\\'" . typescript-ts-mode)
-  ("\\.mjs\\'" . typescript-ts-mode)
-  ("\\.mts\\'" . typescript-ts-mode)
-  ("\\.cjs\\'" . typescript-ts-mode)
-  ("\\.ts\\'" . typescript-ts-mode)
-  ("\\.jsx\\'" . tsx-ts-mode)
-  ("\\.json\\'" . json-ts-mode)
-  ("\\.Dockerfile\\'" . dockerfile-ts-mode)
-  ("\\.prisma\\'" . prisma-ts-mode)
-  ("\\.yaml\\'" . yaml-ts-mode)
-  ;; More modes defined here...
-  )
- :preface
- (defun tb/setup-install-grammars ()
-   "Install Tree-sitter grammars if they are absent."
-   (interactive)
-   (dolist
-       (grammar
-        '((css . ("https://github.com/tree-sitter/tree-sitter-css"))
-          (bash "https://github.com/tree-sitter/tree-sitter-bash")
-          (html "https://github.com/tree-sitter/tree-sitter-html")
-          (angular
-           "https://github.com/dlvandenberg/tree-sitter-angular")
-          (javascript
-           .
-           ("https://github.com/tree-sitter/tree-sitter-javascript"))
-          (json . ("https://github.com/tree-sitter/tree-sitter-json"))
-          (python
-           . ("https://github.com/tree-sitter/tree-sitter-python"))
-          (markdown
-           "https://github.com/ikatyang/tree-sitter-markdown")
-          (make "https://github.com/alemuller/tree-sitter-make")
-          (elisp "https://github.com/Wilfred/tree-sitter-elisp")
-          (cmake "https://github.com/uyha/tree-sitter-cmake")
-          (c "https://github.com/tree-sitter/tree-sitter-c")
-          (gdscript
-           "https://github.com/PrestonKnopp/tree-sitter-gdscript")
-          (cpp "https://github.com/tree-sitter/tree-sitter-cpp")
-          (toml
-           .
-           ("https://github.com/tree-sitter/tree-sitter-toml"
-            "v0.5.1"))
-          (tsx
-           .
-           ("https://github.com/tree-sitter/tree-sitter-typescript"
-            "v0.20.3"
-            "tsx/src"))
-          (typescript
-           .
-           ("https://github.com/tree-sitter/tree-sitter-typescript"
-            "v0.20.3"
-            "typescript/src"))
-          (yaml . ("https://github.com/ikatyang/tree-sitter-yaml"))
-          (prisma "https://github.com/victorhqc/tree-sitter-prisma")))
-     (add-to-list 'treesit-language-source-alist grammar)
-     ;; Only install `grammar' if we don't already have it
-     ;; installed. However, if you want to *update* a grammar then
-     ;; this obviously prevents that from happening.
-     (unless (treesit-language-available-p (car grammar))
-       (treesit-install-language-grammar (car grammar)))))
+ :ensure nil ; built in
+ :custom
+ ;; Install a grammar the first time a mode actually needs it, rather than
+ ;; looping over every recipe on each startup. Set to `always' to skip the
+ ;; confirmation prompt.
+ (treesit-auto-install-grammar 'ask)
+ (treesit-font-lock-level 6)
+ :config
+ (dolist (grammar
+          '((angular "https://github.com/dlvandenberg/tree-sitter-angular")
+            (bash "https://github.com/tree-sitter/tree-sitter-bash")
+            (c "https://github.com/tree-sitter/tree-sitter-c")
+            (cmake "https://github.com/uyha/tree-sitter-cmake")
+            (cpp "https://github.com/tree-sitter/tree-sitter-cpp")
+            (css "https://github.com/tree-sitter/tree-sitter-css")
+            (elisp "https://github.com/Wilfred/tree-sitter-elisp")
+            (gdscript "https://github.com/PrestonKnopp/tree-sitter-gdscript")
+            (html "https://github.com/tree-sitter/tree-sitter-html")
+            (javascript "https://github.com/tree-sitter/tree-sitter-javascript")
+            (json "https://github.com/tree-sitter/tree-sitter-json")
+            (make "https://github.com/alemuller/tree-sitter-make")
+            (markdown "https://github.com/ikatyang/tree-sitter-markdown")
+            (prisma "https://github.com/victorhqc/tree-sitter-prisma")
+            (python "https://github.com/tree-sitter/tree-sitter-python")
+            (toml "https://github.com/tree-sitter/tree-sitter-toml" "v0.5.1")
+            (tsx "https://github.com/tree-sitter/tree-sitter-typescript"
+                 "v0.20.3" "tsx/src")
+            (typescript "https://github.com/tree-sitter/tree-sitter-typescript"
+                        "v0.20.3" "typescript/src")
+            (yaml "https://github.com/ikatyang/tree-sitter-yaml")))
+   (add-to-list 'treesit-language-source-alist grammar)))
+#+end_src
 
- ;; Optional, but recommended. Tree-sitter enabled major modes are
- ;; distinct from their ordinary counterparts.
- ;;
- ;; You can remap major modes with `major-mode-remap-alist'. Note
- ;; that this does *not* extend to hooks! Make sure you migrate them
- ;; also
- (dolist (mapping
-          '((python-mode . python-ts-mode)
-            (css-mode . css-ts-mode)
-            (typescript-mode . typescript-ts-mode)
-            (js-mode . typescript-ts-mode)
-            (js2-mode . typescript-ts-mode)
-            (c-mode . c-ts-mode)
-            (c++-mode . c++-ts-mode)
-            (c-or-c++-mode . c-or-c++-ts-mode)
-            (bash-mode . bash-ts-mode)
-            (css-mode . css-ts-mode)
-            (json-mode . json-ts-mode)
-            (js-json-mode . json-ts-mode)
-            (sh-mode . bash-ts-mode)
-            (sh-base-mode . bash-ts-mode)))
-   (add-to-list 'major-mode-remap-alist mapping))
- :config (tb/setup-install-grammars) (setq treesit-font-lock-level 6))
+*** prefer tree-sitter major modes
+=treesit-enabled-modes= is new in 31.1. Setting it to =t= applies the whole built-in
+=treesit-major-mode-remap-alist= (26 mappings), which already covers python, css,
+typescript, c, c++, sh, json and the rest — replacing the hand-maintained
+=major-mode-remap-alist= loop this module used to carry.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-treesit.el" :mkdirp yes
+(setopt treesit-enabled-modes t)
+
+;; Deliberate deviations from `treesit-major-mode-remap-alist', which sends
+;; JS to `js-ts-mode'. typescript-ts-mode handles plain JS better for this
+;; codebase. Note core's `auto-mode-alist' yields `javascript-mode' (an alias
+;; of `js-mode') for .js, so both symbols need an entry. json-mode and
+;; js2-mode are third-party and absent from the built-in table.
+(dolist (mapping '((js-mode . typescript-ts-mode)
+                   (javascript-mode . typescript-ts-mode)
+                   (js2-mode . typescript-ts-mode)
+                   (json-mode . json-ts-mode)))
+  (add-to-list 'major-mode-remap-alist mapping))
+#+end_src
+
+*** file extensions
+Kept explicit rather than leaning on =auto-mode-alist= + remap, because core maps
+=.js= and =.jsx= to =javascript-mode=, which would land on =js-ts-mode=/=tsx-ts-mode=
+by a different route. =.html= is claimed by =ngxhtml-ts-mode= in its own file, so it
+is not repeated here.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-treesit.el" :mkdirp yes
+(dolist (entry '(("\\.js\\'" . typescript-ts-mode)
+                 ("\\.mjs\\'" . typescript-ts-mode)
+                 ("\\.cjs\\'" . typescript-ts-mode)
+                 ("\\.ts\\'" . typescript-ts-mode)
+                 ("\\.mts\\'" . typescript-ts-mode)
+                 ("\\.jsx\\'" . tsx-ts-mode)
+                 ("\\.json\\'" . json-ts-mode)
+                 ("\\.yaml\\'" . yaml-ts-mode)
+                 ("\\.Dockerfile\\'" . dockerfile-ts-mode)
+                 ("\\.prisma\\'" . prisma-ts-mode)))
+  (add-to-list 'auto-mode-alist entry))
 
 (provide 'tony-emacs-treesit)
 #+end_src
@@ -2414,6 +2302,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 
 *** flycheck use and config
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-linter.el" :mkdirp yes
+;;; tony-emacs-linter.el --- Flycheck and editorconfig  -*- lexical-binding: t; -*-
 (use-package
  flycheck
  :ensure t
@@ -2428,7 +2317,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 *** editorconfig use and config
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-linter.el" :mkdirp yes
 (use-package editorconfig
-  :ensure t
+  :ensure nil ; built in since Emacs 30
   :config (editorconfig-mode 1))
 #+end_src
 
@@ -2449,6 +2338,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 
 *** use and configure jinx
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-spellchecker.el" :mkdirp yes
+;;; tony-emacs-spellchecker.el --- Jinx spell checking  -*- lexical-binding: t; -*-
 (use-package
  jinx
  :ensure t
@@ -2463,6 +2353,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 
 ** ~prettier.el~
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-prettier.el" :mkdirp yes
+;;; tony-emacs-prettier.el --- Apheleia auto-formatting  -*- lexical-binding: t; -*-
 ;; auto-format different source code files extremely intelligently
 ;; https://github.com/radian-software/apheleia
 (use-package elisp-autofmt :ensure t)
@@ -2498,6 +2389,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 
 ** ~lsp-biome.el~
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-lsp-biome.el" :mkdirp yes
+;;; tony-emacs-lsp-biome.el --- Biome language server  -*- lexical-binding: t; -*-
 (use-package
  lsp-biome
  :after apheleia
@@ -2513,6 +2405,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 
 ** ~completion.el~
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-completion.el" :mkdirp yes
+;;; tony-emacs-completion.el --- Corfu in-buffer completion  -*- lexical-binding: t; -*-
 ;;;; Code Completion
 (use-package
  corfu
@@ -2555,6 +2448,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 
 ** ~lsp-mode.el~
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-lsp-mode.el" :mkdirp yes
+;;; tony-emacs-lsp-mode.el --- lsp-mode configuration  -*- lexical-binding: t; -*-
     ;; taken from github.com/yolksys
 (use-package
  lsp-mode
@@ -2569,7 +2463,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
    .
    lsp-deferred))
  :custom
- (lsp-completion-provider :none) ; Using company as the provider
+ (lsp-completion-provider :none) ; corfu handles completion
  (lsp-diagnostics-provider :flycheck)
  (lsp-session-file (locate-user-emacs-file ".lsp-session"))
  (lsp-log-io nil) ; IMPORTANT! Use only for debugging! Drastically affects performance
@@ -2659,6 +2553,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 
 (use-package
  lsp-completion
+ :ensure nil ; ships with lsp-mode
  :no-require
  :hook ((lsp-mode . lsp-completion-mode)))
 
@@ -2676,24 +2571,14 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
   lsp-ui-doc-position 'at-point))
 
 
-;; init.el
-;;;; per https://github.com/emacs-lsp/lsp-mode#performance
-(setq read-process-output-max (* 10 1024 1024)) ;; 10mb
-(setq gc-cons-threshold 200000000)
-
 ;;(add-to-list 'warning-suppress-log-types '(lsp-mode))
 ;;(add-to-list 'warning-suppress-types '(lsp-mode))
 
-(provide 'tony-emacs-lsp-mode)
-#+end_src
+;; NOTE: `gc-cons-threshold' and `read-process-output-max' used to be set here.
+;; They now live in early-init.el, since they are process-wide startup tuning
+;; rather than lsp configuration.
 
-** ~lsp-treemacs.el~
-#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-lsp-treemacs.el" :mkdirp yes
-(use-package
- lsp-treemacs
- :ensure t
- :commands lsp-treemacs-errors-list)
-(provide 'tony-emacs-lsp-treemacs)
+(provide 'tony-emacs-lsp-mode)
 #+end_src
 
 ** ~ngx.el~
@@ -2702,7 +2587,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 
 ;;; Code:
 
-(use-package ngxhtml-ts-mode)
+(use-package ngxhtml-ts-mode :ensure nil) ; local, in tony-lisp/
 
 (add-hook 'ngxhtml-ts-mode-hook #'lsp-deferred)
 
@@ -2768,6 +2653,7 @@ Falls back to npm's global node_modules."
 
 *** use and configure sicp
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-info-manuals.el" :mkdirp yes
+;;; tony-emacs-info-manuals.el --- Bundled Info manuals  -*- lexical-binding: t; -*-
 (use-package sicp :ensure t)
 #+end_src
 *** provide module
@@ -2781,6 +2667,7 @@ Run ~M-x copilot-login~ once to authenticate with your GitHub account.
 
 *** use and config copilot with nerd-icons
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-copilot.el" :mkdirp yes
+;;; tony-emacs-copilot.el --- GitHub Copilot inline completion  -*- lexical-binding: t; -*-
 ;; copilot requires track-changes >= 1.4
 (use-package track-changes
   :ensure (:host github :repo "emacs-straight/track-changes" :type git))
@@ -2866,9 +2753,38 @@ npm install -g @blowmage/cursor-agent-acp
 
 *** use and config agent-shell
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-agent-shell.el" :mkdirp yes
+;;; tony-emacs-agent-shell.el --- Agent shell (ACP) for Claude Code and friends  -*- lexical-binding: t; -*-
+  ;; fnm exposes Node globals through a per-shell dir under
+  ;; /run/user/UID/fnm_multishells/, which disappears with that shell and is
+  ;; absent entirely when Emacs starts from a desktop launcher. Its "default"
+  ;; alias is stable, so use that to keep claude-agent-acp on exec-path.
+  (let ((fnm-bin (expand-file-name "~/.local/share/fnm/aliases/default/bin")))
+    (when (file-directory-p fnm-bin)
+      (add-to-list 'exec-path fnm-bin)
+      (setenv "PATH" (concat fnm-bin path-separator (getenv "PATH")))))
+
   (use-package shell-maker :ensure t)
 
   (use-package acp :ensure t :after shell-maker)
+
+;; agent-shell draws its header SVG at the frame's own font metrics --
+;; `frame-char-height', plus the default face's family and size -- so it
+;; already tracks the fontaine preset. Emacs then inflates the finished
+;; image a second time by `image-scaling-factor', whose `auto' value works
+;; out to ~1.6 at this font size, landing the header ~60% larger than body
+;; text. An explicit :scale in the image spec beats `image-scaling-factor',
+;; and the header string carries exactly one image, so pin it there rather
+;; than changing image scaling for the whole buffer.
+(defun my/agent-shell-header-unscale (header)
+  "Pin the SVG image in HEADER to :scale 1 so it matches body text."
+  (when (stringp header)
+    (let ((pos 0))
+      (while (and pos (< pos (length header)))
+        (let ((image (get-text-property pos 'display header)))
+          (when (imagep image)
+            (setf (image-property image :scale) 1)))
+        (setq pos (next-single-property-change pos 'display header)))))
+  header)
 
 (use-package agent-shell
   :ensure (:host github :repo "xenodium/agent-shell")
@@ -2876,13 +2792,28 @@ npm install -g @blowmage/cursor-agent-acp
   :bind
   (("C-c a a" . agent-shell)
    ("C-c a c" . agent-shell-anthropic-start-claude-code)
-   ("C-c a u" . agent-shell-cursor-start-agent))
+   ("C-c a u" . agent-shell-cursor-start-agent)
+   ("C-c a p" . agent-shell-prompt-compose)
+   ("C-c a t" . agent-shell-prompt-steer)
+   ("C-c a r" . agent-shell-prompt-queue-resume)
+   ("C-c a w" . agent-shell-copy-last-output))
   :config
+  (setq agent-shell-session-restore-verbosity 'full)
+  (setq agent-shell-session-strategy 'prompt)
+  ;; Claude Code is the only agent in use, so skip the picker that
+  ;; `agent-shell' and the sidebar would otherwise show.
+  (setq agent-shell-preferred-agent-config 'claude-code)
+  ;; Report tokens and spend in the shell header. Both need
+  ;; `agent-shell-header-style' non-nil, which it is on a graphical frame.
+  (setq agent-shell-show-cost-indicator t)
+  (setq agent-shell-show-usage-at-turn-end t)
+  ;; The sidebar is a dedicated side window, which display-buffer-same-window
+  ;; (the default) refuses to use, leaving link placement up to whatever
+  ;; display-buffer falls through to. Send files to a real window instead.
+  (setq agent-shell-file-display-action
+        '((display-buffer-reuse-window display-buffer-use-some-window)))
   ;; Inherit the current Emacs process environment so the claude binary
   ;; in PATH (and nvm, etc.) is visible to the agent subprocess
-  (setq agent-shell-session-restore-verbosity 'full)
-  (setq agent-shell-markdown-render-function #'agent-shell-markdown-replace-markup)
-  (setq agent-shell-highlight-blocks t)
   (setq agent-shell-anthropic-claude-environment
         (agent-shell-make-environment-variables
          :inherit-env t))
@@ -2890,7 +2821,8 @@ npm install -g @blowmage/cursor-agent-acp
   (setq agent-shell-cursor-environment
         (agent-shell-make-environment-variables
          :inherit-env t))
-  (setq agent-shell-session-strategy 'prompt))
+  (advice-add 'agent-shell--render-header-model-uncached
+              :filter-return #'my/agent-shell-header-unscale))
 #+end_src
 
 *** provide module
@@ -2911,6 +2843,7 @@ Keybinds extend the existing =C-c a= prefix:
 
 *** use and config agent-shell-sidebar
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-agent-shell-sidebar.el" :mkdirp yes
+;;; tony-emacs-agent-shell-sidebar.el --- Project-aware agent-shell sidebar  -*- lexical-binding: t; -*-
 (use-package agent-shell-sidebar
   :ensure (:host github :repo "cmacrae/agent-shell-sidebar")
   :bind
@@ -2935,6 +2868,7 @@ Keybinds extend the existing =C-c a= prefix:
 
 *** use and config mermaid-mode
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-mermaid.el" :mkdirp yes
+;;; tony-emacs-mermaid.el --- Mermaid diagram mode  -*- lexical-binding: t; -*-
   (use-package mermaid-mode
     :ensure (:host github :repo "abrochard/mermaid-mode")
     )

@@ -1,2 +1,9 @@
 #!/bin/sh
-xrandr --output HDMI-0 --primary --mode 3840x2160 --pos 0x0 --rotate normal --output DP-0 --mode 3840x2160 --pos 3840x0 --rotate normal --output DP-1 --off --output DP-2 --mode 5120x2880 --pos 7680x0 --rotate normal --output DP-3 --off --output DP-4 --off --output DP-5 --off
+# One xrandr call per output, so a monitor that isn't detected (the S9 sometimes
+# stops signaling) doesn't abort the whole layout. If the S9 is missing, the
+# Planar slides left next to the TV.
+xrandr --output DP-1 --off --output DP-3 --off --output DP-4 --off --output DP-5 --off
+xrandr --output HDMI-0 --primary --mode 3840x2160 --pos 0x0 --rotate normal
+planar_x=8960
+xrandr --output DP-0 --mode 5120x2880 --pos 3840x0 --rotate normal || planar_x=3840
+xrandr --output DP-2 --mode 5120x2880 --pos "${planar_x}x0" --rotate normal

@@ -1,3 +1,4 @@
+;;; tony-emacs-embark.el --- Embark contextual actions  -*- lexical-binding: t; -*-
 (use-package
  embark
  :ensure t

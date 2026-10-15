@@ -2,7 +2,7 @@
 
 ;;; Code:
 
-(use-package ngxhtml-ts-mode)
+(use-package ngxhtml-ts-mode :ensure nil) ; local, in tony-lisp/
 
 (add-hook 'ngxhtml-ts-mode-hook #'lsp-deferred)
 

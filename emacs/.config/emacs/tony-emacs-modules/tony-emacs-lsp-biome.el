@@ -1,3 +1,4 @@
+;;; tony-emacs-lsp-biome.el --- Biome language server  -*- lexical-binding: t; -*-
 (use-package
  lsp-biome
  :after apheleia

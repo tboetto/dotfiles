@@ -1,3 +1,4 @@
+;;; tony-emacs-prettier.el --- Apheleia auto-formatting  -*- lexical-binding: t; -*-
 ;; auto-format different source code files extremely intelligently
 ;; https://github.com/radian-software/apheleia
 (use-package elisp-autofmt :ensure t)

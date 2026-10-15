@@ -1,3 +1,4 @@
+;;; init.el --- Main init: elpaca bootstrap and module loading  -*- lexical-binding: t; -*-
 (defvar elpaca-installer-version 0.12)
 (defvar elpaca-directory (expand-file-name "elpaca/" user-emacs-directory))
 (defvar elpaca-builds-directory (expand-file-name "builds/" elpaca-directory))
@@ -50,13 +51,10 @@
 ;; Declared early so elpaca has their recipes before processing the queue.
 (use-package spinner :ensure (:host github :repo "Malabarba/spinner.el"))
 
-(add-hook 'window-setup-hook 'toggle-frame-maximized t)
-
 (setq ring-bell-function #'ignore)
 (setq inhibit-startup-message t)
 (menu-bar-mode -1)
-(tool-bar-mode -1)
-(scroll-bar-mode -1)
+(scroll-bar-mode -1) ; `tool-bar-mode' is already off in early-init.el
 
 (repeat-mode 1)
 
@@ -68,8 +66,14 @@
 (setq backup-inhibited nil) ;Not sure if needed, given `make-backup-files` above
 (setq create-lockfiles nil)
 
-(global-display-line-numbers-mode 1)
-(hl-line-mode 1)
+;; Line numbers only where they earn their keep -- not in org, magit, dired,
+;; vterm or the agent-shell sidebar.
+(dolist (hook '(prog-mode-hook conf-mode-hook))
+  (add-hook hook #'display-line-numbers-mode))
+
+;; `hl-line-mode' is buffer-local: calling it here only ever highlighted
+;; whichever buffer happened to be current during init. Use the global mode.
+(global-hl-line-mode 1)
 
 (recentf-mode 1)
 (setq history-length 25)
@@ -79,8 +83,8 @@
 (global-auto-revert-mode 1)
 (setq global-auto-revert-non-file-buffers t)
 
-(setq minibuffer-prompt-properties
-      '(read-only t cursor-intangible t face minibuffer-prompt))
+;; `minibuffer-prompt-properties' already defaults to exactly these values on
+;; Emacs 31, so only the hook is needed.
 (add-hook 'minibuffer-setup-hook #'cursor-intangible-mode)
 
 (setq enable-recursive-minibuffers t)
@@ -91,25 +95,30 @@
 ;; Disable the damn thing by making it disposable. 
 ;; (setq custom-file (make-temp-file "emacs-custom-"))
 
-(setq w32-pass-apps-to-system nil)
-(setq w32-apps-modifier 'hyper)
+;; `w32-pass-apps-to-system' / `w32-apps-modifier' only get a real `defvar' from
+;; w32-fns.el, which isn't loaded on this platform, so forward-declare them to
+;; keep the byte-compiler from treating the `setq' below as a free variable.
+(defvar w32-pass-apps-to-system)
+(defvar w32-apps-modifier)
+(when (eq system-type 'windows-nt)
+  (setq w32-pass-apps-to-system nil)
+  (setq w32-apps-modifier 'hyper))
 
-;;(defconst my-leader (if (eq system-type 'darwin) "SPC" "SPC"))
 (defun enable-hyper-super-modifiers-linux-x ()
-  ;; on nowadays linux, <windows> key is usually configured to Super
+  "Make the <menu> key act as the hyper modifier.
+On modern Linux the <windows> key is usually already mapped to Super.
+Note: for H-s you must release <menu> before pressing `s'."
+  (define-key key-translation-map [menu] 'event-apply-hyper-modifier))
 
-  ;; menu key as hyper (Note: for H-s, you need to release <menu> key before pressing 's')
-  (define-key key-translation-map [menu] 'event-apply-hyper-modifier) ;H-
-  ;;(define-key key-translation-map [apps] 'event-apply-hyper-modifier)
-
-  ;; by default, Emacs bind <menu> to execute-extended-command (same as M-x) now <menu> defined as 'hyper, we need to press <menu> twice to get <H-menu> (global-set-key (kbd "<H-menu>") 'execute-extended-command)
-  )
-
-(enable-hyper-super-modifiers-linux-x)
+;; Only meaningful under X -- there is no <menu> key event to translate in a
+;; terminal frame, and macOS has its own modifier handling.
+(when (eq window-system 'x)
+  (enable-hyper-super-modifiers-linux-x))
 
 ;; Vertico settings
 ;; Add prompt indicator to `completing-read-multiple'.
 ;; We display [CRM<separator>], e.g., [CRM,] if the separator is a comma.
+(require 'crm) ; for `crm-separator'
 (defun crm-indicator (args)
   (cons
    (format "[CRM%s] %s"
@@ -132,23 +141,22 @@
 (require 'tony-emacs-visual-fill-column)
 (require 'tony-emacs-org)
 (require 'tony-emacs-project)
-;;(require 'tony-emacs-treemacs)
 (require 'tony-emacs-pulsar)
 (require 'tony-emacs-fonts)
 (require 'tony-emacs-nerd-icons)
 (require 'tony-emacs-tweakers)
 (require 'tony-emacs-which-key)
 (require 'tony-emacs-godot)
-;;(require 'tony-emacs-prot-themes)
-;;(require 'tony-emacs-doom-themes)
-;;(require 'tony-emacs-solaire-mode)
 (require 'tony-emacs-themes)
+;; Must follow `tony-emacs-themes': solaire advises `load-theme' to swap
+;; backgrounds, so the themes need to be available first.
+(require 'tony-emacs-solaire-mode)
 (require 'tony-emacs-doom-modeline)
-;(require 'tony-emacs-textsize)
 (require 'tony-emacs-vertico)
 (require 'tony-emacs-marginalia)
 (require 'tony-emacs-orderless)
 (require 'tony-emacs-consult)
+(require 'tony-emacs-embark)
 (require 'tony-emacs-diff-hl)
 (require 'tony-emacs-magit)
 (require 'tony-emacs-blamer)
@@ -160,7 +168,6 @@
 (require 'tony-emacs-treesit)
 (require 'tony-emacs-languages)
 (require 'tony-emacs-lsp-mode)
-;;(require 'tony-emacs-lsp-treemacs)
 (require 'tony-emacs-ngx)
 (require 'tony-emacs-lsp-biome)
 (require 'tony-emacs-info-manuals)

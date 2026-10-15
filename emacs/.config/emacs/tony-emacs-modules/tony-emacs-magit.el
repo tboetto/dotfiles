@@ -1,3 +1,4 @@
+;;; tony-emacs-magit.el --- Magit configuration and performance tuning  -*- lexical-binding: t; -*-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;                MAGIT               ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

@@ -1,3 +1,4 @@
+;;; tony-emacs-miscellaneous.el --- Odds and ends: shell env, compat, markdown  -*- lexical-binding: t; -*-
 (use-package
  exec-path-from-shell
  :ensure t

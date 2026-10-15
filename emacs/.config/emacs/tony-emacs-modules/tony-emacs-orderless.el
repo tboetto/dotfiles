@@ -1,3 +1,4 @@
+;;; tony-emacs-orderless.el --- Orderless completion style  -*- lexical-binding: t; -*-
 (use-package
  orderless
  :ensure t

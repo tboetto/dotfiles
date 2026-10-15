@@ -1,3 +1,4 @@
+;;; tony-emacs-denote.el --- Denote note-taking stack  -*- lexical-binding: t; -*-
 (use-package
  denote
  :ensure (:host github :repo "protesilaos/denote")

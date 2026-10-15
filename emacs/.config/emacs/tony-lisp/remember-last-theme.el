@@ -1,4 +1,4 @@
-;;; remember-themes.el --- Remembers the last theme in use and re-loads for the next session.
+;;; remember-last-theme.el --- Reload the last theme used  -*- lexical-binding: t; -*-
 
 ;; Authors: Jason Milkins <jasonm23@gmail.com>, Mark A. Hershberger <mah@everybody.org>
 ;; Url: https://github.com/jasonm23/emacs-remember-theme

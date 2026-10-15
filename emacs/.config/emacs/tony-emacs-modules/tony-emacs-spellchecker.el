@@ -1,3 +1,4 @@
+;;; tony-emacs-spellchecker.el --- Jinx spell checking  -*- lexical-binding: t; -*-
 (use-package
  jinx
  :ensure t

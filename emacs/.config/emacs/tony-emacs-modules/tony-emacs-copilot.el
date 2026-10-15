@@ -1,3 +1,4 @@
+;;; tony-emacs-copilot.el --- GitHub Copilot inline completion  -*- lexical-binding: t; -*-
 ;; copilot requires track-changes >= 1.4
 (use-package track-changes
   :ensure (:host github :repo "emacs-straight/track-changes" :type git))

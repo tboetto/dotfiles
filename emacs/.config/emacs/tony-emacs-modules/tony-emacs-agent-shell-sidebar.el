@@ -1,3 +1,4 @@
+;;; tony-emacs-agent-shell-sidebar.el --- Project-aware agent-shell sidebar  -*- lexical-binding: t; -*-
 (use-package agent-shell-sidebar
   :ensure (:host github :repo "cmacrae/agent-shell-sidebar")
   :bind

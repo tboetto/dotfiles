@@ -1,3 +1,4 @@
+;;; tony-emacs-project.el --- project.el tweaks  -*- lexical-binding: t; -*-
 (use-package project
   :ensure nil
   :bind (:map project-prefix-map

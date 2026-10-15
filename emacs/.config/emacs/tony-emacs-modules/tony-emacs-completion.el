@@ -1,3 +1,4 @@
+;;; tony-emacs-completion.el --- Corfu in-buffer completion  -*- lexical-binding: t; -*-
 ;;;; Code Completion
 (use-package
  corfu

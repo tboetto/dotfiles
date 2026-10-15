@@ -1,9 +1,17 @@
+;;; early-init.el --- Pre-GUI, pre-package startup tuning  -*- lexical-binding: t; -*-
 (setenv "LSP_USE_PLISTS" "true")
 
 (setq package-enable-at-startup nil)
 
+(setq gc-cons-threshold 200000000)        ; 200mb
+(setq read-process-output-max (* 10 1024 1024)) ; 10mb
+
 (tool-bar-mode -1)
 ;;(push '(tool-bar-lines . 0) default-frame-alist)
+
+(add-to-list 'default-frame-alist '(fullscreen . maximized))
+
+(setq native-comp-async-report-warnings-errors 'silent)
 
 (defun homebrew-gcc-paths ()
   "Return GCC library paths from Homebrew installations.

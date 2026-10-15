@@ -43,7 +43,8 @@
 
 ;;;for ngxhtml start
 (defgroup ngx-group nil
-  "ngx group")
+  "Faces for Angular template syntax in `ngxhtml-ts-mode'."
+  :group 'languages)
 
 (defface ngx-control-face
   '((((class color) (min-colors 88) (background light))
