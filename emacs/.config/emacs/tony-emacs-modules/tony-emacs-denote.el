@@ -4,6 +4,15 @@
  :ensure (:host github :repo "protesilaos/denote")
  :demand t
  :init
+ :bind
+ (("C-c n n" . denote)
+  ("C-c n N" . denote-type)
+  ("C-c n d" . denote-sort-dired)
+  ("C-c n l" . denote-link)
+  ("C-c n L" . denote-add-links)
+  ("C-c n b" . denote-backlinks)
+  ("C-c n r" . denote-rename-file)
+  ("C-c n k" . denote-rename-file-keywords))
  :config
  (setq denote-file-type 'org)
  (setq denote-workdir (expand-file-name "~/Documents/org/work-notes"))
