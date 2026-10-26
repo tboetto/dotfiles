@@ -17,6 +17,23 @@
 ;; agent-shell transcript -- makes typing ")" insert a second one: "(abc))".
 (setq electric-pair-skip-self t)
 
+;; `skip-self' doesn't help with double quotes. Emacs decides whether a typed
+;; `"' opens or closes a string by asking the parser if point is already
+;; inside one. In org and comint-derived buffers (agent-shell) `"' is a string
+;; delimiter, so one stray `"' earlier in the buffer makes every later quote
+;; look like a closer and typing "hello" yields "hello"". Don't auto-pair `"'
+;; in those prose-like modes; code modes keep it.
+(defun my/electric-pair-no-double-quote (char)
+  "Inhibit pairing for CHAR when it is a double quote, else use the default."
+  (or (eq char ?\")
+      (electric-pair-default-inhibit char)))
+
+(dolist (hook '(org-mode-hook agent-shell-mode-hook))
+  (add-hook hook
+            (lambda ()
+              (setq-local electric-pair-inhibit-predicate
+                          #'my/electric-pair-no-double-quote))))
+
 (use-package markdown-mode
   :ensure t
   :mode (("\\.md\\'" . markdown-mode)
