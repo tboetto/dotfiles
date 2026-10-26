@@ -18,6 +18,9 @@ esac
 
 # Loop through all attached batteries and format the info
 for battery in /sys/class/power_supply/BAT?*; do
+	# No battery (desktop): the glob stays literal. Exit 0 so dwmblocks
+	# treats the empty output as a hidden block rather than an error.
+	[ -e "$battery" ] || continue
 	# If non-first battery, print a space separator.
 	[ -n "${capacity+x}" ] && printf " "
 	# Sets up the status and capacity
@@ -27,7 +30,7 @@ for battery in /sys/class/power_supply/BAT?*; do
 		"Charging") status="🔌" ;;
 		"Not charging") status="🛑" ;;
 		"Unknown") status="♻️" ;;
-		*) exit 1 ;;
+		*) status="❓" ;;
 	esac
 	capacity="$(cat "$battery/capacity" 2>&1)"
 	# Will make a warn variable if discharging and low
