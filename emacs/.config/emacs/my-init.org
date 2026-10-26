@@ -688,6 +688,11 @@ Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-l
 
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-miscellaneous.el" :mkdirp yes
 (electric-pair-mode 1)
+;; Always overtype a closer that's already next to point. The default
+;; (`electric-pair-preserve-balance') only overtypes when that helps balance
+;; the buffer, so any earlier unclosed "(" -- common in prose, org, and the
+;; agent-shell transcript -- makes typing ")" insert a second one: "(abc))".
+(setq electric-pair-skip-self t)
 #+end_src
 
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-miscellaneous.el" :mkdirp yes
@@ -714,6 +719,20 @@ Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-l
   (setq-default visual-fill-column-enable-sensible-window-split t)
 
   (add-hook 'visual-line-mode-hook #'visual-fill-column-for-vline)
+
+  ;; Org buffers alone get a narrower fill column; the 400 default stays for
+  ;; agent-shell and other visual-line-mode buffers, where markdown table
+  ;; rendering needs the extra width. Re-adjusting after the setq-local
+  ;; covers both hook orderings: if visual-fill-column-mode already enabled
+  ;; with the old width, this recomputes margins immediately. Guarded with
+  ;; `bound-and-true-p' because an org buffer can be initialized at startup
+  ;; before elpaca has loaded the package, and `visual-fill-column-adjust'
+  ;; isn't autoloaded; when the mode enables later it reads the local width.
+  (add-hook 'org-mode-hook
+            (lambda ()
+              (setq-local visual-fill-column-width 140)
+              (when (bound-and-true-p visual-fill-column-mode)
+                (visual-fill-column-adjust))))
 
   :config
   (advice-add 'text-scale-adjust :after #'visual-fill-column-adjust))
