@@ -72,6 +72,12 @@ Entry point is =nvim/.config/nvim/init.lua=. Uses [[https://github.com/wbthomaso
 Scripts are symlinked into =~/.local/bin/=. Statusbar scripts live under
 =statusbar/= and are designed for use with =dwmblocks= or similar.
 
+=cron/fcrontab= is a plain-text source file, not an executable script — it's
+the weekly mirror-ranking/npm-update schedule. Stowing it only places the
+file; it still needs loading into fcron's spool with =fcrontab
+~/.local/bin/cron/fcrontab= on each machine (see =linux-tricks.org= for the
+full fcron setup).
+
 ** shell
 
 Zsh config is at =~/.config/zsh/.zshrc=. Aliases are in

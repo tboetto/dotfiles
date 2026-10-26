@@ -10,16 +10,15 @@ if rate-mirrors --save="$TMPFILE" arch --max-delay=43200 --fetch-mirrors-timeout
     # Check if the temporary file is not empty using the `-s` test.
     if [[ -s "$TMPFILE" ]]; then
         echo "Successfully generated new mirror list."
-        # Use `sudo` just for the specific commands that need it.
-        # This prevents the script from running with unnecessary elevated privileges.
-        sudo mv /etc/pacman.d/mirrorlist-arch /etc/pacman.d/mirrorlist-arch-backup
-        sudo cp "$TMPFILE" /etc/pacman.d/mirrorlist-arch
-	# --- Add this line to set standard permissions (644) ---
-        sudo chmod 644 /etc/pacman.d/mirrorlist-arch
-        # -----------------------------------------------------
+        # /etc/pacman.d/mirrorlist-arch is chowned to tony (see setup
+        # note below), so overwriting its contents in place needs only
+        # file write permission, not directory write permission -- no
+        # sudo required. (Replacing the path instead of overwriting it,
+        # e.g. via `mv`, would need that.)
+        cp /etc/pacman.d/mirrorlist-arch /etc/pacman.d/mirrorlist-arch-backup
+        cp "$TMPFILE" /etc/pacman.d/mirrorlist-arch
         # Optional: Save a copy to your user's directory.
         cp "$TMPFILE" ~/.local/artixinstall/mirrorlist-arch
-        chown tony ~/.local/artixinstall/mirrorlist-arch
     else
         echo "rate-mirrors ran successfully but produced an empty file. Keeping old mirrorlist."
     fi

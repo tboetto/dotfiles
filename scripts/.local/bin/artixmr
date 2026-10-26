@@ -9,15 +9,14 @@ if rate-mirrors --save="$TMPFILE" artix --fetch-mirrors-timeout=120000; then
     # Check if the generated temporary file is not empty.
     if [[ -s "$TMPFILE" ]]; then
         echo "Successfully generated new Artix mirror list."
-        # Backup the old mirrorlist and replace it with the new one.
-        sudo mv /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist-backup
-        sudo mv "$TMPFILE" /etc/pacman.d/mirrorlist
-        # --- Add this line to set standard permissions (644) ---
-        sudo chmod 644 /etc/pacman.d/mirrorlist
-        # -----------------------------------------------------        
+        # /etc/pacman.d/mirrorlist is owned by tony, so overwriting its
+        # contents in place needs only file write permission, not
+        # directory write permission -- no sudo required. (Replacing the
+        # path instead of overwriting it, e.g. via `mv`, would need that.)
+        cp /etc/pacman.d/mirrorlist /etc/pacman.d/mirrorlist-backup
+        cp "$TMPFILE" /etc/pacman.d/mirrorlist
         # Optional: Save a copy to your user's directory.
         cp /etc/pacman.d/mirrorlist ~/.local/artixinstall/mirrorlist
-        sudo chown tony ~/.local/artixinstall/mirrorlist
     else
         echo "rate-mirrors ran successfully but produced an empty file. Keeping old mirrorlist."
     fi

@@ -1,0 +1,3 @@
+@ 7 $HOME/.local/bin/artixmr >> $HOME/.cache/mirror-update.log 2>&1
+@ 7 $HOME/.local/bin/archmr >> $HOME/.cache/mirror-update.log 2>&1
+@ 7 $HOME/.local/bin/npmup >> $HOME/.cache/npm-update.log 2>&1

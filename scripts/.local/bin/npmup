@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# Keep global npm packages (e.g. ACP agent adapters installed via fnm)
+# current. Cron/fcron environments don't source shell rc files, so fnm's
+# node/npm need to be put on PATH explicitly here.
+export PATH="$HOME/.local/share/fnm/aliases/default/bin:$PATH"
+
+npm outdated -g --parseable 2>/dev/null | cut -d: -f4 | xargs -r -n1 npm install -g
