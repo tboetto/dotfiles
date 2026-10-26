@@ -1,3 +1,4 @@
 @ 7d $HOME/.local/bin/artixmr >> $HOME/.cache/mirror-update.log 2>&1
 @ 7d $HOME/.local/bin/archmr >> $HOME/.cache/mirror-update.log 2>&1
 @ 7d $HOME/.local/bin/npmup >> $HOME/.cache/npm-update.log 2>&1
+@ 30d paccache -r >> $HOME/.cache/paccache.log 2>&1
