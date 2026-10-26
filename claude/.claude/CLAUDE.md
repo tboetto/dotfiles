@@ -17,10 +17,9 @@ instruction overrides them.
 
 - Any file you create for my benefit rather than the project's - plans, notes,
   investigation write-ups, PR description drafts, migration checklists, ticket
-  breakdowns - must be named `tony-doc-<whatever>.md` and left untracked. My
-  global gitignore (`~/.config/git/ignore`, symlinked from `~/dotfiles`) has
-  `tony-doc-*`, so the prefix is what keeps these out of a commit when I run
-  `git add .`.
+  breakdowns - must be named `tony-doc-<whatever>.md` and left untracked.
+  They are not gitignored (I want them searchable in my editor), so never stage
+  them: stage work by path, not with `git add .` or `git add -A`.
 - This applies wherever the file lands, repo root or a subdirectory.
 - It does NOT apply to files the project itself owns: `README.md`, `AGENTS.md`,
   `CLAUDE.md`, `CONTRIBUTING.md`, docs under a committed `docs/` tree, or
@@ -62,6 +61,33 @@ instruction overrides them.
   and let GitHub or Jira handle the wrapping. Blank lines between paragraphs,
   headings, and list items are fine; manual line breaks inside a paragraph are
   not.
+- Use plain markdown that any md-rendering field (GitHub, Jira, Confluence)
+  will pick up: `##`/`###` for headings, backticks for variable, file, and
+  function names, `-` for bullets. No HTML.
+- Do not try to make a PR description or ticket description copy-paste
+  cleanly out of the chat transcript itself. I mouse-select terminal output,
+  and both a rendered heading/code span and a fenced code block have failed to
+  survive that round trip (the renderer eats the `##`/backticks one way, or
+  the terminal's copy wraps the whole selection as one code block the other
+  way) - this looks like a property of the terminal/copy pipeline, not
+  something fixable by changing the markdown source.
+- Instead, write the description to a `tony-doc-<whatever>.md` file (per the
+  "Scratch docs written into a repo" rule above, which already names PR
+  description drafts as an example) and tell me the path. I will open and copy
+  from that file directly in an editor, which does not have the terminal's
+  copy quirks.
+- Same voice discipline as the smells listed under "Code comments" below,
+  aimed at prose instead of code:
+  - No review-response voice - no "addressed the comment about X", "per your
+    feedback", "no longer does Y as flagged", "updated to...". Describe the
+    current design as if writing it for the first time, not as a diff against
+    an earlier draft.
+  - Do not argue the chosen approach against an alternative that was
+    considered and dropped. State what the change does and why it is needed;
+    leave rejected paths out entirely.
+  - Do not pre-empt or narrate a review discussion in the text. If a comment
+    changes the design, update the description to describe the new design -
+    do not mention that a comment caused the change.
 
 ## Code comments
 
@@ -98,3 +124,18 @@ instruction overrides them.
     4.1". Describe the code, not the project.
 - Trimming is not the same as deleting. Where a real constraint is buried in
   four lines of rationale, keep the constraint and cut the rationale.
+- When a change removes or relocates a mechanism (a socket, a transport, a
+  service, a retry), search the comments and test names for its vocabulary and
+  fix them in the same change. Stale narration of a removed design is the most
+  common way comments go wrong.
+- Never cite a document, spec section, recording, or path that is not in the
+  repo. State the constraint itself.
+- No `Regression:` framing in specs. Write the guarantee the test protects, in
+  present tense.
+- One comment per constraint, on the symbol it describes. Do not repeat it in
+  the template or stylesheet, and do not leave a JSDoc sitting on an unrelated
+  constant above the class or function it documents.
+- Do not copy configurable numbers or counts into a comment ("the third
+  failure", "two readings", "11s"). Name the setting instead, or leave it out.
+- Architecture, flows and cross-file rationale belong in the project README.
+  An inline comment covers only the local constraint a maintainer would break.

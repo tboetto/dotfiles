@@ -5,4 +5,6 @@
 # node/npm need to be put on PATH explicitly here.
 export PATH="$HOME/.local/share/fnm/aliases/default/bin:$PATH"
 
-npm outdated -g --parseable 2>/dev/null | cut -d: -f4 | xargs -r -n1 npm install -g
+# Do not upgrade npm itself here: replacing npm's node_modules mid-run breaks
+# the running npm (Cannot find module 'promise-retry').
+npm outdated -g --parseable 2>/dev/null | cut -d: -f4 | grep -v '^npm@' | xargs -r -n1 npm install -g
