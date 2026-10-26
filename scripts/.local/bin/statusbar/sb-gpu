@@ -1,3 +1,20 @@
 #!/bin/sh
 
-sensors | awk '/GPU/ {print "📼🌡️ " $2}'
+# GPU temperature and utilization. The proprietary NVIDIA driver doesn't
+# expose sensors to lm_sensors, so ask nvidia-smi; fall back to amdgpu via
+# sensors. Prints nothing if neither is available (e.g. Intel-only laptop).
+
+case $BLOCK_BUTTON in
+	3) notify-send "📼 GPU module" "Shows GPU temperature and utilization.
+- Shift click to edit script." ;;
+	6) "$TERMINAL" -e "$EDITOR" "$0" ;;
+esac
+
+if command -v nvidia-smi >/dev/null 2>&1 &&
+	out="$(nvidia-smi --query-gpu=temperature.gpu,utilization.gpu --format=csv,noheader,nounits 2>/dev/null)" &&
+	[ -n "$out" ]; then
+	printf '%s\n' "$out" | head -1 | awk -F', *' '{printf "📼%s°C %s%%\n", $1, $2}'
+	exit
+fi
+
+sensors 2>/dev/null | awk '/^amdgpu/ {gpu=1} gpu && /^edge:/ {sub(/^\+/, "", $2); print "📼" $2; exit}'
