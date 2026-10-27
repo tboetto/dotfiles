@@ -12,7 +12,9 @@
   ("C-c n L" . denote-add-links)
   ("C-c n b" . denote-backlinks)
   ("C-c n r" . denote-rename-file)
-  ("C-c n k" . denote-rename-file-keywords))
+  ("C-c n k" . denote-rename-file-keywords)
+  ("C-c n i" . denote-link-after-creating)
+  ("C-c n I" . denote-link-after-creating-with-command))
  :config
  (setq denote-file-type 'org)
  (setq denote-workdir (expand-file-name "~/Documents/org/work-notes"))

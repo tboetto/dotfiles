@@ -39,4 +39,26 @@
   :mode (("\\.md\\'" . markdown-mode)
          ("\\.markdown\\'" . markdown-mode)))
 
+(defcustom my/alpha-background 90
+  "Background opacity (0-100) used when transparency is enabled.
+Matches `st.alpha: 0.9' in xresources. Needs a compositor (xcompmgr)."
+  :type 'integer
+  :group 'convenience)
+
+(defun my/set-alpha-background (value)
+  "Set `alpha-background' to VALUE on all frames and on new frames."
+  (setf (alist-get 'alpha-background default-frame-alist) value)
+  (setf (alist-get 'alpha-background initial-frame-alist) value)
+  (dolist (frame (frame-list))
+    (set-frame-parameter frame 'alpha-background value)))
+
+(defun my/toggle-transparency ()
+  "Toggle background transparency between `my/alpha-background' and opaque."
+  (interactive)
+  (let ((on (/= (or (alist-get 'alpha-background default-frame-alist) 100) 100)))
+    (my/set-alpha-background (if on 100 my/alpha-background))
+    (message "Transparency %s" (if on "off" "on"))))
+
+(my/set-alpha-background my/alpha-background)
+
 (provide 'tony-emacs-miscellaneous)

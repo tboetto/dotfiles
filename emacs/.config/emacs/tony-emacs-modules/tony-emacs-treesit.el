@@ -39,8 +39,25 @@
 (dolist (mapping '((js-mode . typescript-ts-mode)
                    (javascript-mode . typescript-ts-mode)
                    (js2-mode . typescript-ts-mode)
-                   (json-mode . json-ts-mode)))
+                   (json-mode . json-ts-mode)
+                   ;; gdscript-mode.el pushes its own .gd entry onto
+                   ;; `auto-mode-alist' when it loads, so remap instead.
+                   (gdscript-mode . gdscript-ts-mode)))
   (add-to-list 'major-mode-remap-alist mapping))
+
+(use-package treesit-fold
+  :ensure (:host github :repo "emacs-tree-sitter/treesit-fold")
+  :hook (elpaca-after-init . global-treesit-fold-mode)
+  :config
+  ;; ngxhtml-ts-mode is custom, so treesit-fold has no rules for it. Reuse the
+  ;; HTML element rule and fold Angular control-flow blocks (@if/@for/...).
+  (add-to-list 'treesit-fold-range-alist
+               '(ngxhtml-ts-mode
+                 (element . treesit-fold-range-html)
+                 (statement_block . treesit-fold-range-seq)))
+  :bind (("C-c z t" . treesit-fold-toggle)
+         ("C-c z o" . treesit-fold-open-all)
+         ("C-c z c" . treesit-fold-close-all)))
 
 (dolist (entry '(("\\.js\\'" . typescript-ts-mode)
                  ("\\.mjs\\'" . typescript-ts-mode)

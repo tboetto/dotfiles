@@ -25,7 +25,7 @@
  (lsp-eldoc-enable-hover t) ; Display signature information in the echo area
  (lsp-enable-dap-auto-configure t) ; Debug support
  (lsp-enable-file-watchers nil)
- (lsp-enable-folding nil) ; I disable folding since I use origami
+ (lsp-enable-folding nil) ; Folding is handled by treesit-fold, not the server
  (lsp-enable-imenu t)
  (lsp-enable-indentation nil) ; I use prettier
  (lsp-enable-links nil) ; No need since we have `browse-url'

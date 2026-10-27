@@ -2,6 +2,12 @@
 (use-package
  diff-hl
  :ensure t
+ :bind
+ (("C-c v h" . diff-hl-show-hunk)
+  ("C-c v n" . diff-hl-show-hunk-next)
+  ("C-c v p" . diff-hl-show-hunk-previous)
+  ("C-c v r" . diff-hl-revert-hunk)
+  ("C-c v s" . diff-hl-stage-dwim))
  :init
  (global-diff-hl-mode)
  (diff-hl-flydiff-mode) ; update diff-hl on the fly

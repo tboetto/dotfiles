@@ -52,8 +52,6 @@ every async compile is more distracting than useful.
 #+end_src
 
 ** Find gcc and libgccjit packages to be used for emacs on macOS
-random commit
-random commit2
 #+begin_src emacs-lisp :tangle "early-init.el" :mkdirp yes
 (defun homebrew-gcc-paths ()
   "Return GCC library paths from Homebrew installations.
@@ -720,6 +718,30 @@ Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-l
 #+end_src
 
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-miscellaneous.el" :mkdirp yes
+(defcustom my/alpha-background 90
+  "Background opacity (0-100) used when transparency is enabled.
+Matches `st.alpha: 0.9' in xresources. Needs a compositor (xcompmgr)."
+  :type 'integer
+  :group 'convenience)
+
+(defun my/set-alpha-background (value)
+  "Set `alpha-background' to VALUE on all frames and on new frames."
+  (setf (alist-get 'alpha-background default-frame-alist) value)
+  (setf (alist-get 'alpha-background initial-frame-alist) value)
+  (dolist (frame (frame-list))
+    (set-frame-parameter frame 'alpha-background value)))
+
+(defun my/toggle-transparency ()
+  "Toggle background transparency between `my/alpha-background' and opaque."
+  (interactive)
+  (let ((on (/= (or (alist-get 'alpha-background default-frame-alist) 100) 100)))
+    (my/set-alpha-background (if on 100 my/alpha-background))
+    (message "Transparency %s" (if on "off" "on"))))
+
+(my/set-alpha-background my/alpha-background)
+#+end_src
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-miscellaneous.el" :mkdirp yes
 
 (provide 'tony-emacs-miscellaneous)
 #+end_src
@@ -824,7 +846,12 @@ This is the official package managed by Godot
     :hook ((gdscript-mode . lsp-deferred)
            (gdscript-ts-mode . lsp-deferred))
     :init
-    (require 'lsp-gdscript))
+    (require 'lsp-gdscript)
+    :config
+    ;; Godot sends a custom `gdscript/capabilities' notification (only used by
+    ;; the VS Code extension); ignore it to avoid the "Unknown notification" warning.
+    (puthash "gdscript/capabilities" #'ignore
+             (lsp--client-notification-handlers (gethash 'gdscript lsp-clients))))
 #+end_src
 
 **** provide module
@@ -976,7 +1003,9 @@ Setup org mode basics:
   ("C-c n L" . denote-add-links)
   ("C-c n b" . denote-backlinks)
   ("C-c n r" . denote-rename-file)
-  ("C-c n k" . denote-rename-file-keywords))
+  ("C-c n k" . denote-rename-file-keywords)
+  ("C-c n i" . denote-link-after-creating)
+  ("C-c n I" . denote-link-after-creating-with-command))
  :config
  (setq denote-file-type 'org)
  (setq denote-workdir (expand-file-name "~/Documents/org/work-notes"))
@@ -1267,6 +1296,9 @@ Chrome. Useful for previewing Markdown via the browser's Markdown extension.
    '("8" . meow-digit-argument)
    '("9" . meow-digit-argument)
    '("0" . meow-digit-argument)
+   ;; Code folding (treesit-fold)
+   '("Z o" . treesit-fold-open-all)
+   '("Z c" . treesit-fold-close-all)
    '("/" . meow-keypad-describe-key)
    '("?" . meow-cheatsheet))
   (meow-normal-define-key
@@ -1328,7 +1360,8 @@ Chrome. Useful for previewing Markdown via the browser's Markdown extension.
    '("X" . meow-goto-line)
    '("y" . meow-save)
    '("Y" . meow-clipboard-save)
-   '("z" . meow-pop-selection)
+   '("z" . treesit-fold-toggle)
+   '("Z" . meow-pop-selection)
    '("'" . repeat)
    '("<escape>" . ignore)))
 #+end_src
@@ -2125,6 +2158,12 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 (use-package
  diff-hl
  :ensure t
+ :bind
+ (("C-c v h" . diff-hl-show-hunk)
+  ("C-c v n" . diff-hl-show-hunk-next)
+  ("C-c v p" . diff-hl-show-hunk-previous)
+  ("C-c v r" . diff-hl-revert-hunk)
+  ("C-c v s" . diff-hl-stage-dwim))
  :init
  (global-diff-hl-mode)
  (diff-hl-flydiff-mode) ; update diff-hl on the fly
@@ -2314,8 +2353,34 @@ typescript, c, c++, sh, json and the rest — replacing the hand-maintained
 (dolist (mapping '((js-mode . typescript-ts-mode)
                    (javascript-mode . typescript-ts-mode)
                    (js2-mode . typescript-ts-mode)
-                   (json-mode . json-ts-mode)))
+                   (json-mode . json-ts-mode)
+                   ;; gdscript-mode.el pushes its own .gd entry onto
+                   ;; `auto-mode-alist' when it loads, so remap instead.
+                   (gdscript-mode . gdscript-ts-mode)))
   (add-to-list 'major-mode-remap-alist mapping))
+#+end_src
+
+*** code folding
+=treesit-fold= folds on tree-sitter nodes. The global mode only turns on in buffers
+that have a tree-sitter parser and fold rules for their major mode, so it covers every
+=*-ts-mode= it knows about. It is enabled once elpaca has finished (which also
+autoloads the package), and the keys are bound globally to the autoloaded commands,
+so nothing needs =:demand=. Modes without upstream rules (the custom
+=ngxhtml-ts-mode=) get their rules added in =:config=.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-treesit.el" :mkdirp yes
+(use-package treesit-fold
+  :ensure (:host github :repo "emacs-tree-sitter/treesit-fold")
+  :hook (elpaca-after-init . global-treesit-fold-mode)
+  :config
+  ;; ngxhtml-ts-mode is custom, so treesit-fold has no rules for it. Reuse the
+  ;; HTML element rule and fold Angular control-flow blocks (@if/@for/...).
+  (add-to-list 'treesit-fold-range-alist
+               '(ngxhtml-ts-mode
+                 (element . treesit-fold-range-html)
+                 (statement_block . treesit-fold-range-seq)))
+  :bind (("C-c z t" . treesit-fold-toggle)
+         ("C-c z o" . treesit-fold-open-all)
+         ("C-c z c" . treesit-fold-close-all)))
 #+end_src
 
 *** file extensions
@@ -2516,7 +2581,7 @@ is not repeated here.
  (lsp-eldoc-enable-hover t) ; Display signature information in the echo area
  (lsp-enable-dap-auto-configure t) ; Debug support
  (lsp-enable-file-watchers nil)
- (lsp-enable-folding nil) ; I disable folding since I use origami
+ (lsp-enable-folding nil) ; Folding is handled by treesit-fold, not the server
  (lsp-enable-imenu t)
  (lsp-enable-indentation nil) ; I use prettier
  (lsp-enable-links nil) ; No need since we have `browse-url'

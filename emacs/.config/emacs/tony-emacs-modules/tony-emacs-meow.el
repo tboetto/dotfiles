@@ -18,6 +18,9 @@
    '("8" . meow-digit-argument)
    '("9" . meow-digit-argument)
    '("0" . meow-digit-argument)
+   ;; Code folding (treesit-fold)
+   '("Z o" . treesit-fold-open-all)
+   '("Z c" . treesit-fold-close-all)
    '("/" . meow-keypad-describe-key)
    '("?" . meow-cheatsheet))
   (meow-normal-define-key
@@ -79,7 +82,8 @@
    '("X" . meow-goto-line)
    '("y" . meow-save)
    '("Y" . meow-clipboard-save)
-   '("z" . meow-pop-selection)
+   '("z" . treesit-fold-toggle)
+   '("Z" . meow-pop-selection)
    '("'" . repeat)
    '("<escape>" . ignore)))
 
