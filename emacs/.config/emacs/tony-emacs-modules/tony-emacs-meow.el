@@ -82,8 +82,8 @@
    '("X" . meow-goto-line)
    '("y" . meow-save)
    '("Y" . meow-clipboard-save)
-   '("z" . treesit-fold-toggle)
-   '("Z" . meow-pop-selection)
+   '("z" . meow-pop-selection)
+   '("Z" . treesit-fold-toggle)
    '("'" . repeat)
    '("<escape>" . ignore)))
 
