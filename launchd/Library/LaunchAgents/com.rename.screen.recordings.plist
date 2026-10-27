@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.rename.screen_recordings</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/c131265/.local/bin/change_SR_name</string>
+    </array>
+    <key>WatchPaths</key>
+    <array>
+        <string>/Users/c131265/raw_screen_grabs</string>
+    </array>
+    <key>StandardErrorPath</key>
+      <string>/tmp/com.rename.screen.recordings.err</string>
+    <key>StandardOutPath</key>
+      <string>/tmp/com.rename.screen.recordings.out</string>
+    <key>Debug</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>

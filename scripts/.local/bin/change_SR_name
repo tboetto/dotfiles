@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+
+# You can replace screen_recordings with the name of the folder where your screen recordings are saved
+# Just try to keep it in your user home directory "~" to avoid permission issues
+screen_recordings_path=$HOME/raw_screen_grabs 
+
+# MP4 output location
+mp4_output_path=$HOME/screen_recordings_mp4
+
+# Log output location
+log_file=$HOME/raw_screen_grabs/rename_SR.log
+
+
+
+# absolute path to ensure launchd has access to it
+# ffmpeg_path=/usr/local/bin/ffmpeg
+HandBrakeCLI=/opt/homebrew/bin/HandBrakeCLI
+brew=/opt/homebrew/bin/brew
+gifsicle=/opt/homebrew/bin/gifsicle
+
+# Check if HandBrakeCLI exists, if not install it
+if ! command -v "$HandBrakeCLI"; then
+  echo "HandBrakeCLI is not installed, initialing installation" >> $log_file
+  "$brew install handbrake"
+else
+  echo "HandBrakeCLI is already installed" >> $log_file
+fi
+#
+# Check if gifsicle exists, if not install it
+if ! command -v "$gifsicle"; then
+  echo "gifsicle is not installed, initialing installation" >> $log_file
+  "$brew install gifsicle"
+else
+  echo "gifsicle is already installed" >> $log_file
+fi
+
+# check if log file exists, otherwise create it
+if [ ! -f $log_file ]; then
+  touch $log_file
+fi
+
+if [ ! -d $mp4_output_path ]; then
+  mkdir $mp4_output_path
+fi
+
+# Ensure dependencies are installed and if not install them
+# Our depedency are (ffmpeg). if it doesn't exist, then our dependencies will be (Homebrew and ffmpeg)
+if ! command -v "$ffmpeg_path"; then
+  echo "ffmpeg is not installed, please install it using brew install ffmpeg" >> $log_file
+else
+  echo "ffmpeg is already installed" >> $log_file
+fi
+
+
+# Given that our screen recordings will now be named "<number> Sreen Recording.mov".
+# We want to grab the largest number in the folder and increment it by 1.
+get_largest_number() {
+  local counter=0
+  for file in "$mp4_output_path"/[0-9]* ;do
+    local file_name=$(basename "$file")
+    local file_number=$(echo "$file_name" | grep -o -E "^[0-9]+")
+    if [[ $file_number -gt $counter ]]; then
+      counter=$file_number
+    fi
+  done
+  echo $counter
+}
+
+# This is our entry point function
+rename_default_recording() {
+  # Allow for screen recording to finish saving before renaming
+  sleep 2
+  local largest_number=$(get_largest_number)
+  local new_recording_regex="^(Screen[[:space:]]Recording).+\.mov$"
+
+  for recording in "$screen_recordings_path"/*; do
+    local file_name=$(basename "$recording")
+    if [[ $file_name =~ $new_recording_regex ]]; then
+      local new_recording_number=$((largest_number + 1))
+      ((largest_number++))
+      # Create a new mp4 path
+      local mp4_path="$mp4_output_path/$new_recording_number Screen Recording.mp4"
+      echo $mp4_path >> $log_file
+      if [ "$(uname)" == "Darwin" ]; then
+        osascript -e 'display notification "Converting screen recording to mp4" with title "Started"'
+      fi
+      # convert to mp4, preserving the source's frame rate instead of the
+      # default preset's constant 30fps
+      "$HandBrakeCLI" -i "$recording" -o "$mp4_path" --vfr
+      if [ ! -f "$mp4_path" ]; then
+        echo "HandBrakeCLI failed to produce $mp4_path, skipping $recording" >> "$log_file"
+        ((largest_number--))
+        continue
+      fi
+      # remove existing mov file
+      rm "$recording"
+      if [ $? -eq 0 ]; then
+        echo "Screen recording encoded to mp4" >> "$log_file"
+        if [ "$(uname)" == "Darwin" ]; then
+          osascript -e 'display notification "Screen recording encoded to mp4" with title "Success"'
+        fi
+      fi
+    fi
+  done
+}
+
+rename_default_recording
+# Run screen shot name change
+$HOME/.local/bin/change_SS_name

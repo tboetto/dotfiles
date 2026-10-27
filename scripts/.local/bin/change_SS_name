@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+# You can replace screen_recordings with the name of the folder where your screen recordings are saved
+# Just try to keep it in your user home directory "~" to avoid permission issues
+screen_recordings_path=$HOME/raw_screen_grabs 
+
+# MP4 output location
+SS_output_path=$HOME/screen_shots
+
+# Log output location
+log_file=$screen_recordings_path/rename_SS.log
+
+
+# check if log file exists, otherwise create it
+if [ ! -f $log_file ]; then
+  touch $log_file
+fi
+
+if [ ! -d $SS_output_path ]; then
+  mkdir $SS_output_path
+fi
+
+# Given that our screen recordings will now be named "<number> Sreen Recording.mov".
+# We want to grab the largest number in the folder and increment it by 1.
+get_largest_number() {
+  local counter=0
+  for file in "$SS_output_path"/*; do
+    if [ -f "$file" ]; then
+      local file_name=$(basename "$file" | grep -o -E "^[0-9]+[[:space:]]Screenshot.+$")
+      if [[ "$file_name" ]]; then
+        local file_number=$(echo "$file_name" | grep -o -E "^[0-9]+")
+        if [[ $file_number -gt $counter ]]; then
+          counter=$file_number
+        fi
+      fi
+    fi
+  done
+  echo $counter
+}
+
+# This is our entry point function
+rename_default_ss() {
+ 
+  # Allow for screen shot to finish saving before renaming
+  sleep 2
+  local largest_number=$(get_largest_number)
+
+  for screenshot in "$screen_recordings_path"/*; do
+    if [[ -f "$screenshot" ]]; then
+      local file_name=$(basename "$screenshot" | grep -o -E "Screenshot.+$")
+      if [[ "$file_name" ]]; then
+        local new_ss_number=$((largest_number + 1))
+        mv "$screenshot" "$SS_output_path/$new_ss_number Screenshot.png"
+        ((largest_number++))
+      fi
+    fi 
+  done
+}
+
+rename_default_ss
+
+
+
