@@ -6,12 +6,6 @@
  :config (setq nerd-icons-font-family "Symbols Nerd Font"))
 
 (use-package
- nerd-icons-dired
- :ensure t
- :after nerd-icons
- :hook (dired-mode . nerd-icons-dired-mode))
-
-(use-package
  nerd-icons-ibuffer
  :ensure t
  :after nerd-icons

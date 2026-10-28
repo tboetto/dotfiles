@@ -157,6 +157,7 @@ Note: for H-s you must release <menu> before pressing `s'."
 (require 'tony-emacs-orderless)
 (require 'tony-emacs-consult)
 (require 'tony-emacs-embark)
+(require 'tony-emacs-dirvish)
 (require 'tony-emacs-diff-hl)
 (require 'tony-emacs-magit)
 (require 'tony-emacs-blamer)

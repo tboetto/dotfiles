@@ -364,6 +364,7 @@ config
   (require 'tony-emacs-orderless)
   (require 'tony-emacs-consult)
   (require 'tony-emacs-embark)
+  (require 'tony-emacs-dirvish)
   (require 'tony-emacs-diff-hl)
   (require 'tony-emacs-magit)
   (require 'tony-emacs-blamer)
@@ -1895,15 +1896,6 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
  :config (setq nerd-icons-font-family "Symbols Nerd Font"))
 #+end_src
 
-*** use and configure nerd-icons-dired
-#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-nerd-icons.el" :mkdirp yes
-(use-package
- nerd-icons-dired
- :ensure t
- :after nerd-icons
- :hook (dired-mode . nerd-icons-dired-mode))
-#+end_src
-
 *** use and configure nerd-icons-ibuffer
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-nerd-icons.el" :mkdirp yes
 (use-package
@@ -2203,6 +2195,86 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
 *** provide module
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-embark.el" :mkdirp yes
 (provide 'tony-emacs-embark)
+#+end_src
+
+** ~dirvish.el~
+[[https://github.com/alexluigit/dirvish][Dirvish]] is a modern file manager built on =dired=. =dirvish-override-dired-mode= makes every =dired= call (=C-x d=, =C-x p D=, =dired-jump=) open Dirvish, so existing habits keep working. It adds file previews, a parent-directory column, subtree expansion (=TAB=), VC state and a quick-access menu (=a=). The icons come from =nerd-icons= through the =nerd-icons= attribute, which replaces =nerd-icons-dired=.
+
+Inside Dirvish, =h= goes up to the parent directory and =l= enters the folder or opens the file at point (=^= and =RET= still work). Meow leaves these free because Dired buffers are in motion state, where only =j= and =k= are claimed. =h= and =l= replace =describe-mode= and =dired-do-redisplay=, still available as =C-h m= and =g=.
+
+Binds: =C-c d= is =dirvish-dwim= (a split with preview, scoped to the current directory) and =C-c D= toggles =dirvish-side=, a project sidebar that follows the current file. Inside Dirvish, =f= opens the =dirvish-fd= file search menu, =y= the yank menu, =N= the narrowing menu, =M-t= toggles the layout and =?= lists everything.
+
+Dirvish works without any external tools, but each tool below unlocks one feature:
+
+| Tool            | Feature                                        |
+|-----------------+------------------------------------------------|
+| =fd=            | =dirvish-fd= live file search                  |
+| =coreutils=     | GNU =ls= (=gls=), needed for =--group-directories-first= on macOS |
+| =poppler=       | PDF preview (=pdftoppm=)                       |
+| =imagemagick=   | image preview and EXIF                         |
+| =ffmpegthumbnailer= | video thumbnails                           |
+| =mediainfo=     | audio and video metadata                       |
+| =tar=, =unzip=  | archive preview (already on both systems)      |
+
+On macOS the system =ls= is BSD and does not accept the GNU flags Dired uses, so the config switches =insert-directory-program= to =gls= when it is installed:
+
+#+begin_src sh
+brew install coreutils fd poppler ffmpegthumbnailer mediainfo imagemagick
+#+end_src
+
+On Arch Linux, where GNU =ls= is already the default:
+
+#+begin_src sh
+sudo pacman -S fd poppler ffmpegthumbnailer mediainfo imagemagick
+#+end_src
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-dirvish.el" :mkdirp yes
+;;; tony-emacs-dirvish.el --- dirvish: a better dired  -*- lexical-binding: t; -*-
+(when (and (eq system-type 'darwin) (executable-find "gls"))
+  (setq insert-directory-program "gls"))
+
+(use-package dirvish
+  :ensure t
+  :init (dirvish-override-dired-mode)
+  :bind
+  (("C-c d" . dirvish-dwim)
+   ("C-c D" . dirvish-side)
+   :map dirvish-mode-map
+   ("h" . dired-up-directory)
+   ("l" . dired-find-file)
+   ("a" . dirvish-quick-access)
+   ("f" . dirvish-file-info-menu)
+   ("y" . dirvish-yank-menu)
+   ("N" . dirvish-narrow)
+   ("TAB" . dirvish-subtree-toggle)
+   ("M-f" . dirvish-history-go-forward)
+   ("M-b" . dirvish-history-go-backward)
+   ("M-l" . dirvish-ls-switches-menu)
+   ("M-m" . dirvish-mark-menu)
+   ("M-t" . dirvish-layout-toggle)
+   ("M-s" . dirvish-setup-menu)
+   ("M-e" . dirvish-emerge-menu))
+  :custom
+  (dirvish-quick-access-entries
+   '(("h" "~/" "Home")
+     ("d" "~/Downloads/" "Downloads")
+     ("c" "~/dotfiles/" "Dotfiles")))
+  (dirvish-attributes
+   '(nerd-icons file-time file-size collapse subtree-state vc-state git-msg))
+  (dirvish-subtree-state-style 'nerd)
+  (dirvish-side-width 38)
+  (dirvish-mode-line-format '(:left (sort symlink) :right (omit yank index)))
+  (delete-by-moving-to-trash t)
+  (dired-listing-switches
+   "-l --almost-all --human-readable --group-directories-first --no-group")
+  :config
+  (dirvish-peek-mode)
+  (dirvish-side-follow-mode))
+#+end_src
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-dirvish.el" :mkdirp yes
+(provide 'tony-emacs-dirvish)
 #+end_src
 
 ** ~diff-hl.el~
