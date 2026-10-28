@@ -13,7 +13,9 @@ Personal dotfiles managed with [[https://www.gnu.org/software/stow/][GNU Stow]].
 | =emacs=   | GNU Emacs configuration (literate, modular)        |
 | =music=   | MPD and ncmpcpp configuration                      |
 | =nvim=    | Neovim configuration                               |
-| =scripts= | Utility scripts and statusbar scripts              |
+| =scripts=       | Shared scripts that work on Linux and macOS      |
+| =scripts-linux= | Linux-only scripts (X11, pacman, statusbar, cron) |
+| =scripts-macos= | macOS-only scripts                               |
 | =shell=   | Zsh, profile, aliases, and shell bookmarks         |
 | =x11=     | X initialization, xprofile, xresources, xsession  |
 
@@ -41,8 +43,16 @@ stow emacs
 
 ** Deploy all packages
 
+*Linux*
+
 #+begin_src sh
-stow audio claude desktop emacs music nvim scripts shell x11
+stow audio claude desktop emacs music nvim scripts scripts-linux shell x11
+#+end_src
+
+*macOS*
+
+#+begin_src sh
+stow claude emacs nvim scripts scripts-macos shell
 #+end_src
 
 Stow creates symlinks from =~= into the corresponding package directory.
@@ -69,10 +79,14 @@ Entry point is =nvim/.config/nvim/init.lua=. Uses [[https://github.com/wbthomaso
 
 ** scripts
 
-Scripts are symlinked into =~/.local/bin/=. Statusbar scripts live under
-=statusbar/= and are designed for use with =dwmblocks= or similar.
+Scripts are symlinked into =~/.local/bin/=. They are split by OS so a
+machine only stows what it can run: =scripts= is shared, =scripts-linux= is
+Linux only, and =scripts-macos= is macOS only. All three use the same
+=.local/bin/= layout, so they merge into one =~/.local/bin=. Statusbar
+scripts live under =scripts-linux/.local/bin/statusbar/= and are designed
+for use with =dwmblocks= or similar.
 
-=cron/fcrontab= is a plain-text source file, not an executable script — it's
+=scripts-linux/.local/bin/cron/fcrontab= is a plain-text source file, not an executable script — it's
 the weekly mirror-ranking/npm-update schedule. Stowing it only places the
 file; it still needs loading into fcron's spool with =fcrontab
 ~/.local/bin/cron/fcrontab= on each machine (see =linux-tricks.org= for the
