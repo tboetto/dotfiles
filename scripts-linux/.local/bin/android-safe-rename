@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rename files under a directory to be Android-storage-safe (strip : < > " \\ | ? *),
+"""Rename files and directories under a directory to be Android-storage-safe (strip : < > " \\ | ? *),
 patching any .cue sidecar's FILE reference to match. Safe to re-run repeatedly."""
 import os
 import re
@@ -19,21 +19,27 @@ def main() -> None:
     dry_run = "--apply" not in sys.argv
 
     renames = []
-    for dirpath, _, filenames in os.walk(root):
-        for fname in filenames:
-            new_fname = sanitize(fname)
-            if new_fname != fname:
-                renames.append((dirpath, fname, new_fname))
+    # Bottom-up: a directory is renamed only after everything inside it, so
+    # every path we rename is still valid when we get to it. The root is kept.
+    for dirpath, dirnames, filenames in os.walk(root, topdown=False):
+        for name in filenames + dirnames:
+            new_name = sanitize(name)
+            if new_name != name:
+                renames.append((dirpath, name, new_name))
 
     by_dir = {}
     for dirpath, old, new in renames:
         by_dir.setdefault(dirpath, []).append((old, new))
 
-    for dirpath, pairs in sorted(by_dir.items()):
+    # dict preserves insertion order, which is the bottom-up walk order
+    for dirpath, pairs in by_dir.items():
         mapping = dict(pairs)
-        for old, _new in pairs:
-            if old.lower().endswith(".cue"):
-                cue_path = os.path.join(dirpath, old)
+        # patch every .cue here, even one whose own name is already clean
+        for cue in sorted(os.listdir(dirpath)):
+            if cue.lower().endswith(".cue"):
+                cue_path = os.path.join(dirpath, cue)
+                if not os.path.isfile(cue_path):
+                    continue
                 with open(cue_path, encoding="utf-8", errors="replace") as f:
                     content = f.read()
                 new_content = content
@@ -46,6 +52,9 @@ def main() -> None:
                             f.write(new_content)
         for old, new in pairs:
             old_path, new_path = os.path.join(dirpath, old), os.path.join(dirpath, new)
+            if os.path.lexists(new_path):
+                print(f"SKIP (target exists): {old_path} -> {new_path}")
+                continue
             print(f'{"[DRY] " if dry_run else ""}Rename: {old_path} -> {new_path}')
             if not dry_run:
                 os.rename(old_path, new_path)

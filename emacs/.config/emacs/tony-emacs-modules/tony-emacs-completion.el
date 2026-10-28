@@ -13,15 +13,13 @@
  (corfu-preview-current 'insert) ; insert previewed candidate
  (corfu-preselect 'prompt)
  (corfu-on-exact-match nil) ; Don't auto expand tempel snippets
- ;; Optionally use TAB for cycling, default is `corfu-complete'.
+ ;; C-j/C-k cycle like vertico. TAB is left to Copilot/NES accept.
  :bind
  (:map
   corfu-map
   ("M-SPC" . corfu-insert-separator)
-  ("TAB" . corfu-next)
-  ([tab] . corfu-next)
-  ("S-TAB" . corfu-previous)
-  ([backtab] . corfu-previous)
+  ("C-j" . corfu-next)
+  ("C-k" . corfu-previous)
   ("S-<return>" . corfu-insert)
   ("RET" . corfu-insert))
 

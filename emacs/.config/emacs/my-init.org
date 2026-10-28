@@ -1186,12 +1186,54 @@ possible obsidian usage
 #+end_src
 
 ** ~project.el~
+Search with globs: =my/consult-ripgrep-globs= asks for include then exclude globs, then runs =consult-ripgrep= so the query comes last. Both prompts start with the previous answer, so repeating a search is =RET RET=. Entries are comma or space separated, and each is normalised:
+
+- A bare word such as =md= or =spec.ts= becomes the extension glob =*.md= or =*.spec.ts=.
+- An entry containing =/= is a path glob. A trailing =/= is dropped and =/**= is also added, so =src/clock-game/lib*= covers every file under that folder.
+- Anything else containing =*=, =?= or =[= is used as written.
+
+Include globs are OR'd by ripgrep, so use a path to scope a folder and the exclude prompt to drop file types.
+
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-project.el" :mkdirp yes
 ;;; tony-emacs-project.el --- project.el tweaks  -*- lexical-binding: t; -*-
+(defvar my/consult-ripgrep-last-include "")
+(defvar my/consult-ripgrep-last-exclude "")
+
+(defun my/ripgrep-expand-globs (input prefix)
+  "Turn comma or space separated INPUT into ripgrep --glob arguments.
+PREFIX is \"\" for includes and \"!\" for excludes."
+  (mapcan
+   (lambda (tok)
+     (let ((tok (string-remove-suffix "/" tok)))
+       (cond
+        ((string-match-p "/" tok)
+         (list (concat " --glob=" prefix tok)
+               (concat " --glob=" prefix tok "/**")))
+        ((string-match-p "[*?[]" tok)
+         (list (concat " --glob=" prefix tok)))
+        (t
+         (list (concat " --glob=" prefix "*." (string-remove-prefix "." tok)))))))
+   (split-string input "[, ]+" t)))
+
+(defun my/consult-ripgrep-globs (&optional dir)
+  "Prompt for include and exclude globs, then run `consult-ripgrep'.
+With prefix argument DIR, also prompt for the directory."
+  (interactive "P")
+  (let* ((inc (read-string "Include globs: " my/consult-ripgrep-last-include))
+         (exc (read-string "Exclude globs: " my/consult-ripgrep-last-exclude))
+         (consult-ripgrep-args
+          (concat consult-ripgrep-args
+                  (apply #'concat (my/ripgrep-expand-globs inc ""))
+                  (apply #'concat (my/ripgrep-expand-globs exc "!")))))
+    (setq my/consult-ripgrep-last-include inc
+          my/consult-ripgrep-last-exclude exc)
+    (consult-ripgrep dir)))
+
 (use-package project
   :ensure nil
   :bind (:map project-prefix-map
-              ("g" . consult-ripgrep))
+              ("g" . consult-ripgrep)
+              ("G" . my/consult-ripgrep-globs))
   :config
   (setq xref-search-program 'ripgrep))
 #+end_src
@@ -2011,6 +2053,7 @@ x×X .,·°;:¡!¿?`'‘’   ÄAÃÀ TODO
     ("M-s g" . consult-grep)
     ("M-s G" . consult-git-grep)
     ("M-s r" . consult-ripgrep)
+    ("M-s R" . my/consult-ripgrep-globs)
     ("M-s l" . consult-line)
     ("M-s L" . consult-line-multi)
     ("M-s k" . consult-keep-lines)
@@ -2536,15 +2579,13 @@ is not repeated here.
  (corfu-preview-current 'insert) ; insert previewed candidate
  (corfu-preselect 'prompt)
  (corfu-on-exact-match nil) ; Don't auto expand tempel snippets
- ;; Optionally use TAB for cycling, default is `corfu-complete'.
+ ;; C-j/C-k cycle like vertico. TAB is left to Copilot/NES accept.
  :bind
  (:map
   corfu-map
   ("M-SPC" . corfu-insert-separator)
-  ("TAB" . corfu-next)
-  ([tab] . corfu-next)
-  ("S-TAB" . corfu-previous)
-  ([backtab] . corfu-previous)
+  ("C-j" . corfu-next)
+  ("C-k" . corfu-previous)
   ("S-<return>" . corfu-insert)
   ("RET" . corfu-insert))
 
@@ -2801,6 +2842,8 @@ Run ~M-x copilot-login~ once to authenticate with your GitHub account.
         ("TAB"     . copilot-accept-completion)
         ("C-TAB"   . copilot-accept-completion-by-word)
         ("C-<tab>" . copilot-accept-completion-by-word)
+        ("M-j"     . copilot-next-completion)
+        ("M-k"     . copilot-previous-completion)
         ("M-n"     . copilot-next-completion)
         ("M-p"     . copilot-previous-completion))
   :custom
@@ -2814,8 +2857,7 @@ Run ~M-x copilot-login~ once to authenticate with your GitHub account.
   (defvar-local tony/copilot-nes--keymap-overlay nil)
   (defvar tony/copilot-nes-priority-map
     (let ((map (make-sparse-keymap)))
-      (define-key map (kbd "TAB") #'copilot-nes-accept)
-      (define-key map [tab] #'copilot-nes-accept)
+      (define-key map (kbd "M-<return>") #'copilot-nes-accept)
       (define-key map (kbd "C-g") #'copilot-nes-dismiss)
       map))
   (defun tony/copilot-nes--sync-keymap-overlay (&rest _)

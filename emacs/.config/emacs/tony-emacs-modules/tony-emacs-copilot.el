@@ -16,6 +16,8 @@
         ("TAB"     . copilot-accept-completion)
         ("C-TAB"   . copilot-accept-completion-by-word)
         ("C-<tab>" . copilot-accept-completion-by-word)
+        ("M-j"     . copilot-next-completion)
+        ("M-k"     . copilot-previous-completion)
         ("M-n"     . copilot-next-completion)
         ("M-p"     . copilot-previous-completion))
   :custom
@@ -29,8 +31,7 @@
   (defvar-local tony/copilot-nes--keymap-overlay nil)
   (defvar tony/copilot-nes-priority-map
     (let ((map (make-sparse-keymap)))
-      (define-key map (kbd "TAB") #'copilot-nes-accept)
-      (define-key map [tab] #'copilot-nes-accept)
+      (define-key map (kbd "M-<return>") #'copilot-nes-accept)
       (define-key map (kbd "C-g") #'copilot-nes-dismiss)
       map))
   (defun tony/copilot-nes--sync-keymap-overlay (&rest _)
