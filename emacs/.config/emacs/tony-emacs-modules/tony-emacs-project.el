@@ -7,11 +7,13 @@
 PREFIX is \"\" for includes and \"!\" for excludes."
   (mapcan
    (lambda (tok)
-     (let ((tok (string-remove-suffix "/" tok)))
+     (let ((path-p (string-match-p "/" tok))
+           (tok (replace-regexp-in-string "/\\(\\*\\*?\\)?\\'" "" tok)))
        (cond
-        ((string-match-p "/" tok)
-         (list (concat " --glob=" prefix tok)
-               (concat " --glob=" prefix tok "/**")))
+        (path-p
+         (let ((tok (if (string-match-p "\\`\\(/\\|\\*\\*\\)" tok) tok (concat "**/" tok))))
+           (list (concat " --glob=" prefix tok)
+                 (concat " --glob=" prefix tok "/**"))))
         ((string-match-p "[*?[]" tok)
          (list (concat " --glob=" prefix tok)))
         (t

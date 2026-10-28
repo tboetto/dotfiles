@@ -1189,7 +1189,7 @@ possible obsidian usage
 Search with globs: =my/consult-ripgrep-globs= asks for include then exclude globs, then runs =consult-ripgrep= so the query comes last. Both prompts start with the previous answer, so repeating a search is =RET RET=. Entries are comma or space separated, and each is normalised:
 
 - A bare word such as =md= or =spec.ts= becomes the extension glob =*.md= or =*.spec.ts=.
-- An entry containing =/= is a path glob. A trailing =/= is dropped and =/**= is also added, so =src/clock-game/lib*= covers every file under that folder.
+- An entry containing =/= is a path glob matched anywhere in the tree, as in VS Code, by prefixing =**/= unless it starts with =/= or =**=. A trailing =/=, =/*= or =/**= is dropped and =/**= is added, so =library-name/*= covers every file under any folder named =library-name=, however deeply nested. Start the entry with =/= to anchor it to the project root.
 - Anything else containing =*=, =?= or =[= is used as written.
 
 Include globs are OR'd by ripgrep, so use a path to scope a folder and the exclude prompt to drop file types.
@@ -1204,11 +1204,13 @@ Include globs are OR'd by ripgrep, so use a path to scope a folder and the exclu
 PREFIX is \"\" for includes and \"!\" for excludes."
   (mapcan
    (lambda (tok)
-     (let ((tok (string-remove-suffix "/" tok)))
+     (let ((path-p (string-match-p "/" tok))
+           (tok (replace-regexp-in-string "/\\(\\*\\*?\\)?\\'" "" tok)))
        (cond
-        ((string-match-p "/" tok)
-         (list (concat " --glob=" prefix tok)
-               (concat " --glob=" prefix tok "/**")))
+        (path-p
+         (let ((tok (if (string-match-p "\\`\\(/\\|\\*\\*\\)" tok) tok (concat "**/" tok))))
+           (list (concat " --glob=" prefix tok)
+                 (concat " --glob=" prefix tok "/**"))))
         ((string-match-p "[*?[]" tok)
          (list (concat " --glob=" prefix tok)))
         (t
