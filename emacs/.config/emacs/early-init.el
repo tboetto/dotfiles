@@ -9,7 +9,7 @@
 (tool-bar-mode -1)
 ;;(push '(tool-bar-lines . 0) default-frame-alist)
 
-(add-to-list 'default-frame-alist '(fullscreen . maximized))
+(add-to-list 'initial-frame-alist '(fullscreen . maximized))
 
 (setq native-comp-async-report-warnings-errors 'silent)
 

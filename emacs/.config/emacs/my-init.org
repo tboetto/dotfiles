@@ -34,11 +34,15 @@ threshold to whether you are typing or idle -- rather than a smaller constant.
 #+end_src
 
 ** start maximized
-Asking for this in =default-frame-alist= means the very first frame is created
+Asking for this in =initial-frame-alist= means the very first frame is created
 maximized. The old =window-setup-hook= + =toggle-frame-maximized= approach drew a
 small frame first and then resized it, which was visible on every launch.
+
+It must not go in =default-frame-alist=: child frames (lsp-ui-doc, posframes)
+inherit that, and on macOS a maximized child frame ignores resizing and stays one
+character cell in size.
 #+begin_src emacs-lisp :tangle "early-init.el" :mkdirp yes
-(add-to-list 'default-frame-alist '(fullscreen . maximized))
+(add-to-list 'initial-frame-alist '(fullscreen . maximized))
 #+end_src
 
 ** silence harmless async native-comp warnings
