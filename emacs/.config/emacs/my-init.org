@@ -227,11 +227,10 @@ C-x + o, C-x + o, C-x + o becomes C-x + o, o, o
 (add-hook 'markdown-mode-hook 'visual-line-mode)
 #+end_src
 
-*** Disable backups and lockfiles
-By default emacs tries to lockdown and backup files. I want to be able to open and edit in other editors, and backups are messing with my imports
+*** Keep backups, disable lockfiles
+Emacs backup (~file~~) and autosave files stay on because I like having them as a safety net. Lockfiles are disabled so I can open and edit the same files in other editors.
 #+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
-  (setq make-backup-files nil)
-  (setq backup-inhibited nil) ;Not sure if needed, given `make-backup-files` above
+  (setq make-backup-files t)
   (setq create-lockfiles nil)
 #+end_src
 
@@ -713,6 +712,23 @@ Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-l
             (lambda ()
               (setq-local electric-pair-inhibit-predicate
                           #'my/electric-pair-no-double-quote))))
+#+end_src
+
+Meow's beacon mode replays one keyboard macro at every cursor, so auto-paired delimiters get inserted once per cursor and then again by the macro, leaving doubled closers. Turn pairing off while beacon is active and put it back afterwards, only if it was on beforehand.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-miscellaneous.el" :mkdirp yes
+(defvar-local my/electric-pair-before-beacon nil
+  "Whether `electric-pair-local-mode' was on before meow beacon mode started.")
+
+(defun my/electric-pair-toggle-for-beacon ()
+  "Disable electric pairing while `meow-beacon-mode' is active, then restore it."
+  (if meow-beacon-mode
+      (progn
+        (setq my/electric-pair-before-beacon electric-pair-mode)
+        (electric-pair-local-mode -1))
+    (when my/electric-pair-before-beacon
+      (electric-pair-local-mode 1))))
+
+(add-hook 'meow-beacon-mode-hook #'my/electric-pair-toggle-for-beacon)
 #+end_src
 
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-miscellaneous.el" :mkdirp yes
@@ -1280,15 +1296,11 @@ same information in the modeline.
  :config (ultra-scroll-mode 1))
 #+end_src
 
-*** copy relative path with line number
-Copy ~file:line~ to clipboard, relative to project root.
-Works in regular buffers (includes line number) and dired (path only).
+*** copy relative and absolute path with position
+Copy a path to the clipboard that VS Code and most terminals/editors jump straight to: ~file:line:column~, with a 1-based character column (a tab counts as one). With an active region it copies ~file:START-END~ lines instead. In dired it copies the path of the file at point with no position. ~C-c y p~ is relative to the project root (or ~default-directory~ with no project); ~C-c y P~ is absolute.
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-tweakers.el" :mkdirp yes
-(defun my/copy-relative-path-with-line ()
-  "Copy relative path of current file with line number to clipboard.
-In dired, copies the path of the file at point without a line number.
-Path is relative to the project root, or `default-directory' if no project."
-  (interactive)
+(defun my/path-with-position (absolute)
+  "Return the current file path plus position, relative unless ABSOLUTE."
   (let* ((file-path
           (cond
            ((derived-mode-p 'dired-mode) (dired-get-file-for-visit))
@@ -1297,15 +1309,36 @@ Path is relative to the project root, or `default-directory' if no project."
          (root (or (when-let* ((proj (project-current)))
                      (project-root proj))
                    default-directory))
-         (relative (file-relative-name file-path root))
-         (result
-          (if (derived-mode-p 'dired-mode)
-              relative
-            (format "%s:%d" relative (line-number-at-pos)))))
+         (path (if absolute
+                   (expand-file-name file-path)
+                 (file-relative-name file-path root))))
+    (cond
+     ((derived-mode-p 'dired-mode) path)
+     ((use-region-p)
+      (format "%s:%d-%d" path
+              (line-number-at-pos (region-beginning))
+              (line-number-at-pos (region-end))))
+     (t
+      (format "%s:%d:%d" path
+              (line-number-at-pos)
+              (1+ (- (point) (line-beginning-position))))))))
+
+(defun my/copy-relative-path-with-line ()
+  "Copy the project-relative path with line and column to the clipboard."
+  (interactive)
+  (let ((result (my/path-with-position nil)))
+    (kill-new result)
+    (message "Copied: %s" result)))
+
+(defun my/copy-absolute-path-with-line ()
+  "Copy the absolute path with line and column to the clipboard."
+  (interactive)
+  (let ((result (my/path-with-position t)))
     (kill-new result)
     (message "Copied: %s" result)))
 
 (global-set-key (kbd "C-c y p") #'my/copy-relative-path-with-line)
+(global-set-key (kbd "C-c y P") #'my/copy-absolute-path-with-line)
 #+end_src
 
 *** open current file in Chrome

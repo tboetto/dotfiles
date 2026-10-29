@@ -18,11 +18,8 @@
   scroll-margin 0)
  :config (ultra-scroll-mode 1))
 
-(defun my/copy-relative-path-with-line ()
-  "Copy relative path of current file with line number to clipboard.
-In dired, copies the path of the file at point without a line number.
-Path is relative to the project root, or `default-directory' if no project."
-  (interactive)
+(defun my/path-with-position (absolute)
+  "Return the current file path plus position, relative unless ABSOLUTE."
   (let* ((file-path
           (cond
            ((derived-mode-p 'dired-mode) (dired-get-file-for-visit))
@@ -31,15 +28,36 @@ Path is relative to the project root, or `default-directory' if no project."
          (root (or (when-let* ((proj (project-current)))
                      (project-root proj))
                    default-directory))
-         (relative (file-relative-name file-path root))
-         (result
-          (if (derived-mode-p 'dired-mode)
-              relative
-            (format "%s:%d" relative (line-number-at-pos)))))
+         (path (if absolute
+                   (expand-file-name file-path)
+                 (file-relative-name file-path root))))
+    (cond
+     ((derived-mode-p 'dired-mode) path)
+     ((use-region-p)
+      (format "%s:%d-%d" path
+              (line-number-at-pos (region-beginning))
+              (line-number-at-pos (region-end))))
+     (t
+      (format "%s:%d:%d" path
+              (line-number-at-pos)
+              (1+ (- (point) (line-beginning-position))))))))
+
+(defun my/copy-relative-path-with-line ()
+  "Copy the project-relative path with line and column to the clipboard."
+  (interactive)
+  (let ((result (my/path-with-position nil)))
+    (kill-new result)
+    (message "Copied: %s" result)))
+
+(defun my/copy-absolute-path-with-line ()
+  "Copy the absolute path with line and column to the clipboard."
+  (interactive)
+  (let ((result (my/path-with-position t)))
     (kill-new result)
     (message "Copied: %s" result)))
 
 (global-set-key (kbd "C-c y p") #'my/copy-relative-path-with-line)
+(global-set-key (kbd "C-c y P") #'my/copy-absolute-path-with-line)
 
 (defun my/open-in-chrome ()
   "Open the current buffer's file in Google Chrome."

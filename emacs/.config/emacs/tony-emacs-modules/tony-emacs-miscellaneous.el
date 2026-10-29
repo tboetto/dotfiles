@@ -34,6 +34,20 @@
               (setq-local electric-pair-inhibit-predicate
                           #'my/electric-pair-no-double-quote))))
 
+(defvar-local my/electric-pair-before-beacon nil
+  "Whether `electric-pair-local-mode' was on before meow beacon mode started.")
+
+(defun my/electric-pair-toggle-for-beacon ()
+  "Disable electric pairing while `meow-beacon-mode' is active, then restore it."
+  (if meow-beacon-mode
+      (progn
+        (setq my/electric-pair-before-beacon electric-pair-mode)
+        (electric-pair-local-mode -1))
+    (when my/electric-pair-before-beacon
+      (electric-pair-local-mode 1))))
+
+(add-hook 'meow-beacon-mode-hook #'my/electric-pair-toggle-for-beacon)
+
 (use-package markdown-mode
   :ensure t
   :mode (("\\.md\\'" . markdown-mode)

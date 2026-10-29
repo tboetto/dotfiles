@@ -62,8 +62,7 @@
 (add-hook 'org-mode-hook 'visual-line-mode)
 (add-hook 'markdown-mode-hook 'visual-line-mode)
 
-(setq make-backup-files nil)
-(setq backup-inhibited nil) ;Not sure if needed, given `make-backup-files` above
+(setq make-backup-files t)
 (setq create-lockfiles nil)
 
 ;; Line numbers only where they earn their keep -- not in org, magit, dired,
