@@ -18,6 +18,12 @@ if $ISLAPTOP; then
 elif $ISDESKTOP; then
 	remaps &
 	trimonarr &
+	# The S9 (USB-C) doesn't wake after DPMS sleep, so DPMS stays off and idle only locks
+	# (xsecurelock) and runs an xscreensaver hack. Idle after 600s, dimmer warns for 5s.
+	xset -dpms
+	xset s 600 5
+	xset s noblank
+	xss-lock -n /usr/lib/xsecurelock/dimmer -l -- lockscreen &
 fi
 
 autostart="xcompmgr dunst unclutter"

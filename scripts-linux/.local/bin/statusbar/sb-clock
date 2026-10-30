@@ -39,12 +39,9 @@ case $BLOCK_BUTTON in
 	2) setsid -f "$TERMINAL" -e calcurse ;;
 	3) notify-send "📅 Time/date module" "\- Left click to show upcoming appointments for the next three days via \`calcurse -d3\` and show the month via \`cal\` (or the pomodoro status if one is running)
 - Middle click opens calcurse if installed
-- Scroll up starts a pomodoro: prompts for minutes or HH:MM, blank = 25min
+- Scroll up starts a pomodoro: prompts for a task, then minutes or HH:MM (blank = 25min)
 - Scroll down cancels the active pomodoro" ;;
-	4) [ -f "$statefile" ] || setsid -f sh -c '
-		ans=$(printf "" | dmenu -p "Pomodoro: minutes or HH:MM (blank=25)") || exit
-		pomodoro "$ans"
-	' ;;
+	4) [ -f "$statefile" ] || setsid -f pomodoro ;;
 	5) pomodoro stop ;;
 	6) "$TERMINAL" -e "$EDITOR" "$0" ;;
 esac

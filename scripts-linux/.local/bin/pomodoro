@@ -1,6 +1,9 @@
 #!/bin/sh
 # Focus timer: shows a tomato in the status bar until time's up.
 # Usage:
+#   pomodoro                  ask for a task description, then the time
+#                             (empty time = 25 minutes); uses dmenu when
+#                             stdin is not a terminal
 #   pomodoro [minutes]        session for N minutes (default 25) from now
 #   pomodoro until HH:MM      session ending at the next occurrence of HH:MM
 #   pomodoro HH:MM            same as above (dmenu passes a bare time)
@@ -18,6 +21,23 @@ statefile="${XDG_CACHE_HOME:-$HOME/.cache}/pomodoro"
 breakfile="${XDG_CACHE_HOME:-$HOME/.cache}/pomodoro-break"
 redraw() { pkill -RTMIN+1 "${STATUSBAR:-dwmblocks}"; }
 
+ask() {
+	if [ -t 0 ]; then
+		printf '%s: ' "$1" >&2
+		read -r reply
+		printf '%s\n' "$reply"
+	else
+		: | dmenu -p "$1"
+	fi
+}
+
+desc=
+if [ $# -eq 0 ]; then
+	desc=$(ask "Pomodoro task") || exit 0
+	desc=$(printf '%s' "$desc" | tr -d "'\"\\\\" | tr '\n' ' ')
+	set -- "$(ask "Minutes or HH:MM (25)")" || exit 0
+fi
+
 arg="$1"
 [ "$arg" = "until" ] && arg="$2"
 
@@ -29,7 +49,7 @@ stop)
 		rm -f "$statefile"
 		notify-send "🍅 Pomodoro" "Cancelled."
 		redraw
-		line="** $(date -d @"$start" '+%H:%M')-$(date -d @"$now" '+%H:%M') (cancelled after $(( (now - start) / 60 ))m)"
+		line="** ${sdesc:+$sdesc }$(date -d @"$start" '+%H:%M')-$(date -d @"$now" '+%H:%M') (cancelled after $(( (now - start) / 60 ))m)"
 		setsid -f sh -c "pomodoro log '$line'"
 	fi
 	exit 0
@@ -90,11 +110,11 @@ if [ -f "$breakfile" ]; then
 fi
 
 start=$(date +%s)
-printf 'start=%s\nend=%s\n' "$start" "$end" > "$statefile"
+printf 'start=%s\nend=%s\ndesc=%s\n' "$start" "$end" "$desc" > "$statefile"
 notify-send "🍅 Pomodoro" "Started, ends $(date -d @"$end" '+%H:%M')"
 redraw
 
-logline="** $(date -d @"$start" '+%H:%M')-$(date -d @"$end" '+%H:%M') ($(( (end - start) / 60 ))m)"
+logline="** ${desc:+$desc }$(date -d @"$start" '+%H:%M')-$(date -d @"$end" '+%H:%M') ($(( (end - start) / 60 ))m)"
 breaksec=$(( (end - start) / 5 ))
 [ "$breaksec" -lt 60 ] && breaksec=60
 

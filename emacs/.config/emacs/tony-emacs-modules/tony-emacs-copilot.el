@@ -56,6 +56,10 @@
                '(gdscript-mode gdscript-indent-offset))
   (add-to-list 'copilot-indentation-alist
                '(gdscript-ts-mode gdscript-indent-offset))
+  ;; gdshader-mode derives from glsl-mode (a prog-mode, not c-mode) and
+  ;; indents with `c-basic-offset'.
+  (add-to-list 'copilot-indentation-alist
+               '(gdshader-mode c-basic-offset))
   ;; Show a nerd-icons Copilot indicator in the mode-line
   (with-eval-after-load 'nerd-icons
     (defun tony/copilot-mode-line-indicator ()

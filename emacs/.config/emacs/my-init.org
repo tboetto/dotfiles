@@ -881,6 +881,110 @@ This is the official package managed by Godot
              (lsp--client-notification-handlers (gethash 'gdscript lsp-clients))))
 #+end_src
 
+**** gdshader-mode + gdshader-lsp-cpp (DIY shader language server)
+Godot shader files (=.gdshader=, =.gdshaderinc=). Godot's built-in language server only
+serves GDScript, so shaders need two separate pieces, one of which is built by hand.
+
+***** the pieces
+- =gdshader-mode= :: regex-based major mode from MELPA ([[https://github.com/bbbscarter/gdshader-mode][bbbscarter/gdshader-mode]]).
+  Builds on =glsl-mode= (installed as a dependency) and adds Godot's extensions.
+  Gives highlighting and indentation only. There is no tree-sitter mode for it, so
+  =treesit-fold= (and the =z= fold key) does nothing in shader buffers.
+- =gdshader-lsp-cpp= :: language server, [[https://github.com/Dead-Shrimp-Studio/gdshader-lsp-cpp][Dead-Shrimp-Studio/gdshader-lsp-cpp]]
+  (C++, MIT). *Not packaged anywhere: there is no prebuilt binary and Elpaca does not
+  manage it.* It lives in =~/.local/src/gdshader-lsp-cpp= and is built from source.
+  Advertises completion, rename, references, folding ranges, inlay hints, semantic
+  tokens, code actions, call hierarchy, color provider and workspace symbols
+  (checked from its =initialize= reply, v0.3.1). Its README also lists hover and
+  go-to-definition, but they were /not/ in that reply, so untested whether they work.
+- Release tracks follow the Godot version: =v0.2.x= (branch =support/4.5+=) for Godot
+  4.5/4.6, =v0.3.x= (=master=) for Godot 4.7+. Built from =master= for Godot 4.7.2.
+
+***** machine-specific behaviour
+The LSP is only set up where the binary exists (=file-executable-p= guard in the
+block below), so machines where it was never built (e.g. the work macOS Emacs) are not
+affected: they just get highlighting from =gdshader-mode=, with no failed-start noise.
+The binary path is Linux-specific (=bin/linux/release/...=).
+
+***** how to (re)build it
+Needs a C++20 compiler (g++ or clang++), CMake and SCons. On Artix/Arch:
+#+begin_example
+sudo pacman -S cmake scons
+#+end_example
+(Fallback if there is no sudo: =python3 -m venv= a throwaway venv, =pip install cmake
+scons= into it, and put its =bin= first on =PATH= for the build. The built binary does
+not depend on the venv. The first build here used that; the current binary was
+rebuilt cleanly with the pacman packages, cmake 4.4.5 and scons 4.11.1.)
+Then:
+#+begin_example
+git clone --recurse-submodules https://github.com/Dead-Shrimp-Studio/gdshader-lsp-cpp \
+    ~/.local/src/gdshader-lsp-cpp
+cd ~/.local/src/gdshader-lsp-cpp
+(cd extern/lsp-framework && cmake -B build_linux -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build build_linux -j"$(nproc)")
+scons platform=linux target=release -j"$(nproc)"
+#+end_example
+Result: =bin/linux/release/gdshader_lsp_release_linux=. Many compiler warnings
+(=-Wunused-parameter=) during the build are normal; check the exit status instead.
+
+***** how to update it
+After a Godot upgrade or just to pick up fixes: =git pull --recurse-submodules= in
+=~/.local/src/gdshader-lsp-cpp=, check the README for which branch matches the Godot
+version (see release tracks above), re-run the =scons= line (re-run the =cmake= step
+only if =extern/lsp-framework= changed), then restart the server in Emacs with
+=M-x lsp-workspace-restart= in a shader buffer. Nothing in this config pins a version.
+
+***** how to check that it works
+Standalone, without Emacs (sends an LSP =initialize= request and prints the reply;
+should show =serverInfo= =gdshader-lsp= and a =capabilities= object):
+#+begin_example
+body='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":"file://'"$PWD"'","capabilities":{}}}'
+printf 'Content-Length: %d\r\n\r\n%s' ${#body} "$body" \
+  | timeout 5 ~/.local/src/gdshader-lsp-cpp/bin/linux/release/gdshader_lsp_release_linux --stdio
+#+end_example
+In Emacs: open a =.gdshader= file, then =C-h m= should list =gdshader-mode= and
+=lsp-mode=; =M-x lsp-describe-session= should show the =gdshader-lsp= server.
+
+***** things that will bite
+- It *must* be started with =--stdio=. Without it the server defaults to TCP mode and
+  a client that spawns it silently fails to attach (README warning). The command below
+  already passes it.
+- The server writes a log file named =gdshader_lsp_log.txt= into its working directory
+  (seen when run by hand), so stray copies may appear wherever Emacs was started. The
+  README/changelog also mention a =--log-path= option; not verified, not used here.
+- =lsp-enable-folding= is =nil= in the lsp-mode block, so the server's folding ranges
+  are not used even though it offers them.
+- =lsp-language-id-configuration= has to map =gdshader-mode= to ="gdshader"= for
+  =lsp-activate-on= to match, which the block does.
+- If the first shader opened after startup gets no LSP but the second does, the
+  registration is happening too late (it runs when =gdshader-mode= first loads).
+- Removing it: delete the =defconst= and the =when= form in the block below, and
+  delete =~/.local/src/gdshader-lsp-cpp= (and =cmake=/=scons= if nothing else uses them).
+
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-godot.el" :mkdirp yes
+  (defconst tony/gdshader-lsp-binary
+    (expand-file-name
+     "~/.local/src/gdshader-lsp-cpp/bin/linux/release/gdshader_lsp_release_linux")
+    "Built gdshader-lsp-cpp server. Only exists on machines where it was built.")
+
+  (use-package gdshader-mode
+    :ensure t
+    :mode ("\\.gdshader\\'" "\\.gdshaderinc\\'")
+    :config
+    ;; Skip the LSP entirely where the binary isn't built (e.g. the work macOS
+    ;; machine), so there is no failed-start noise there.
+    (when (file-executable-p tony/gdshader-lsp-binary)
+      (add-hook 'gdshader-mode-hook #'lsp-deferred)
+      (with-eval-after-load 'lsp-mode
+        (add-to-list 'lsp-language-id-configuration '(gdshader-mode . "gdshader"))
+        (lsp-register-client
+         (make-lsp-client
+          :new-connection
+          (lsp-stdio-connection (list tony/gdshader-lsp-binary "--stdio"))
+          :activation-fn (lsp-activate-on "gdshader")
+          :server-id 'gdshader-lsp)))))
+#+end_src
+
 **** provide module
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-godot.el" :mkdirp yes
   (provide 'tony-emacs-godot)
@@ -1416,6 +1520,7 @@ Chrome. Useful for previewing Markdown via the browser's Markdown extension.
    '("e" . meow-next-word)
    '("E" . meow-next-symbol)
    '("f" . meow-find)
+   '("F" . undo-redo)
    '("g" . meow-cancel-selection)
    '("G" . meow-grab)
    '("h" . meow-left)
@@ -2989,6 +3094,10 @@ Run ~M-x copilot-login~ once to authenticate with your GitHub account.
                '(gdscript-mode gdscript-indent-offset))
   (add-to-list 'copilot-indentation-alist
                '(gdscript-ts-mode gdscript-indent-offset))
+  ;; gdshader-mode derives from glsl-mode (a prog-mode, not c-mode) and
+  ;; indents with `c-basic-offset'.
+  (add-to-list 'copilot-indentation-alist
+               '(gdshader-mode c-basic-offset))
   ;; Show a nerd-icons Copilot indicator in the mode-line
   (with-eval-after-load 'nerd-icons
     (defun tony/copilot-mode-line-indicator ()

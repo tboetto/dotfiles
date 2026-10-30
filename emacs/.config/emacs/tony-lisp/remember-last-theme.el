@@ -119,10 +119,12 @@
 
 ;;;###autoload
 (defun remember-theme-read ()
-  "Return first line from `remember-theme-emacs-dot-file'."
+  "Return first line from `remember-theme-emacs-dot-file' as a symbol.
+Return nil if the file is empty or corrupt."
   (with-temp-buffer
     (insert-file-contents remember-theme-emacs-dot-file)
-    (intern (car (split-string (buffer-string) "\n" t)))))
+    (let ((name (car (split-string (buffer-string) "\n" t))))
+      (and name (intern name)))))
 
 ;;;###autoload
 (defun remember-theme-save ()
@@ -130,9 +132,10 @@
 Stores the name of the current Emacs theme,
 for retrieval by remember-theme-load"
   (when (> (length custom-enabled-themes) 0)
-    (when (file-exists-p remember-theme-emacs-dot-file)
-      (delete-file remember-theme-emacs-dot-file))
-    (append-to-file (format "%s\n" (symbol-name (car custom-enabled-themes))) "" remember-theme-emacs-dot-file)))
+    (let ((tmp (make-temp-file "remember-theme")))
+      (write-region (format "%s\n" (symbol-name (car custom-enabled-themes)))
+                    nil tmp nil 'silent)
+      (rename-file tmp remember-theme-emacs-dot-file t))))
 
 (defvar remember-theme--loading nil
   "Non-nil while `remember-theme-load' is executing, to prevent re-entrancy.")
@@ -155,12 +158,13 @@ If no `remember-theme-emacs-dot-file' file exists the operation is skipped."
   (unless remember-theme--loading
     (let ((remember-theme--loading t))
       (when (file-exists-p remember-theme-emacs-dot-file)
-        (mapc 'disable-theme custom-enabled-themes)
-        (let* ((theme-symbol (remember-theme-read)))
-          (unless (member theme-symbol custom-enabled-themes)
-            (custom-available-themes))
-          (my-load-theme theme-symbol))
-        (run-hooks 'remember-theme-after-load-hook)))))
+        (let ((theme-symbol (remember-theme-read)))
+          (when theme-symbol
+            (mapc 'disable-theme custom-enabled-themes)
+            (unless (member theme-symbol custom-enabled-themes)
+              (custom-available-themes))
+            (my-load-theme theme-symbol)
+            (run-hooks 'remember-theme-after-load-hook)))))))
 
 (provide 'remember-last-theme)
 

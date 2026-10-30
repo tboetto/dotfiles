@@ -50,6 +50,7 @@
    '("e" . meow-next-word)
    '("E" . meow-next-symbol)
    '("f" . meow-find)
+   '("F" . undo-redo)
    '("g" . meow-cancel-selection)
    '("G" . meow-grab)
    '("h" . meow-left)

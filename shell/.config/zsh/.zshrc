@@ -58,7 +58,7 @@ export KEYTIMEOUT=1
 
 export HISTFILE="${XDG_CONFIG_HOME:-$HOME}/.zsh_history"
 HISTSIZE=10000
-SAVEHIST=1000
+SAVEHIST=10000
 setopt SHARE_HISTORY
 # export PATH="$PYENV_ROOT/bin:$PATH"
 source $TOOLS/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh
