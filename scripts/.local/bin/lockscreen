@@ -1,0 +1,30 @@
+#!/bin/sh
+# Lock with xsecurelock; saver_mpv plays ~/animatedpapes on the lock screen, one shuffled
+# playlist per monitor. Started by xss-lock (see xprofile); also fine to run by hand.
+# ~/.config/xsecurelock/mpv.conf loops each GIF 30 extra times (they're only 1-7 s long); videos play once.
+# --scale=oversample: keeps the pixel art crisp when upscaled to 5K.
+# To go back to xscreensaver hacks, use XSECURELOCK_SAVER=saver_xscreensaver.
+# NO_COMPOSITE: under xcompmgr on NVIDIA the default mode paints "INCOMPATIBLE COMPOSITOR"
+# on a white screen. The catch is notifications can draw over the lock, so pause dunst meanwhile.
+# Stop xcompmgr while locked: with it running, the screens kept showing the stale desktop
+# until the mouse moved. It's restarted after unlock.
+# Logs go to ~/.local/state/lockscreen/lock.log (xsecurelock + mpv stderr, plus display state
+# at lock, every 60 s while locked, and at unlock). Kept to the last 1000 lines.
+log=${XDG_STATE_HOME:-$HOME/.local/state}/lockscreen/lock.log
+mkdir -p "${log%/*}"
+[ "$(wc -l <"$log" 2>/dev/null || echo 0)" -gt 1000 ] && tail -n 500 "$log" >"$log.tmp" && mv "$log.tmp" "$log"
+snap() { echo "--- $(date '+%F %T') $1"; xset q | grep -E 'timeout|DPMS|Monitor is'; xrandr --listactivemonitors | tail -n +2; pgrep -a 'mpv|xcompmgr|saver_mpv' | cut -c1-80; }
+snap lock >>"$log" 2>&1
+( while sleep 60; do snap "locked-tick" >>"$log" 2>&1; done ) &
+ticker=$!
+pkill -x xcompmgr
+dunstctl set-paused true 2>/dev/null
+env XSECURELOCK_SAVER=saver_mpv \
+	XSECURELOCK_LIST_VIDEOS_COMMAND='find ~/animatedpapes -type f' \
+	XSECURELOCK_VIDEOS_FLAGS="--include=~/.config/xsecurelock/mpv.conf --scale=oversample --log-file=${log%/*}/mpv.log --msg-level=all=warn" \
+	XSECURELOCK_NO_COMPOSITE=1 XSECURELOCK_BLANK_TIMEOUT=-1 XSECURELOCK_BLANK_DPMS_STATE=on \
+	XSECURELOCK_DEBUG=1 xsecurelock >>"$log" 2>&1
+kill $ticker
+snap unlock >>"$log" 2>&1
+dunstctl set-paused false 2>/dev/null
+xcompmgr >/dev/null 2>&1 &
