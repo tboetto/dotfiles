@@ -45,6 +45,24 @@
 (use-package org-appear :ensure t :hook (org-mode . org-appear-mode))
 (setq org-appear-trigger 'always)
 
+(setq org-startup-with-latex-preview t
+      org-highlight-latex-and-related '(latex))
+(with-eval-after-load 'org
+  (plist-put org-format-latex-options :scale 1.6))
+
+;; auto-toggle preview when cursor enters/leaves a fragment
+(use-package org-fragtog :ensure t :hook (org-mode . org-fragtog-mode))
+
+(defun my/denote-org-files ()
+  "Denote files ending in .org; skips stray files like *.org.empty-*."
+  (denote-directory-files "\\.org\\'"))
+
+(setq org-refile-targets
+      '(("~/Documents/org/tasks.org" :maxlevel . 2)
+        (my/denote-org-files :maxlevel . 2))
+      org-refile-use-outline-path 'file
+      org-outline-path-complete-in-steps nil)
+
 (use-package ob-racket
   :ensure (:host github :repo "DEADB17/ob-racket"))
 

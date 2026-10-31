@@ -31,6 +31,18 @@
         :new-connection
         (lsp-stdio-connection (list tony/gdshader-lsp-binary "--stdio"))
         :activation-fn (lsp-activate-on "gdshader")
+        ;; The server implements hover, definition, signature help and
+        ;; document symbols but does not advertise them in its initialize
+        ;; reply, so lsp-mode never sends those requests. Add them after
+        ;; initialize (verified by hand against the server; see notes above).
+        :initialized-fn
+        (lambda (workspace)
+          (let ((caps (copy-sequence (lsp--workspace-server-capabilities workspace))))
+            (dolist (cap '(:hoverProvider :definitionProvider :documentSymbolProvider))
+              (setq caps (plist-put caps cap t)))
+            (setq caps (plist-put caps :signatureHelpProvider
+                                  '(:triggerCharacters ["(" ","])))
+            (setf (lsp--workspace-server-capabilities workspace) caps)))
         :server-id 'gdshader-lsp)))))
 
 (provide 'tony-emacs-godot)

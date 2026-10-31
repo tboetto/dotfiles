@@ -781,7 +781,7 @@ The NS port ignores `alpha-background', so macOS falls back to
   :hook (org-mode . visual-line-mode)
   :init
   (setq-default visual-fill-column-center-text t)
-  (setq-default visual-fill-column-width 400)
+  (setq-default visual-fill-column-width 140)
   (setq-default visual-fill-column-enable-sensible-window-split t)
 
   (add-hook 'visual-line-mode-hook #'visual-fill-column-for-vline)
@@ -893,10 +893,24 @@ serves GDScript, so shaders need two separate pieces, one of which is built by h
 - =gdshader-lsp-cpp= :: language server, [[https://github.com/Dead-Shrimp-Studio/gdshader-lsp-cpp][Dead-Shrimp-Studio/gdshader-lsp-cpp]]
   (C++, MIT). *Not packaged anywhere: there is no prebuilt binary and Elpaca does not
   manage it.* It lives in =~/.local/src/gdshader-lsp-cpp= and is built from source.
-  Advertises completion, rename, references, folding ranges, inlay hints, semantic
-  tokens, code actions, call hierarchy, color provider and workspace symbols
-  (checked from its =initialize= reply, v0.3.1). Its README also lists hover and
-  go-to-definition, but they were /not/ in that reply, so untested whether they work.
+  Capabilities were checked by hand (v0.3.1, request/reply over stdio against a scratch
+  shader with a struct, a function, a uniform, a const and an =#include=):
+  - Works: completion (built-ins, user and included symbols, struct members, swizzles
+    after =.=), signature help (user and included functions), hover (user functions,
+    uniforms, consts and built-ins such as =UV=), document symbols, semantic tokens.
+  - Partial: go to definition works for variables, uniforms, consts and functions in
+    the same file. It returns nothing for struct type names, struct members and the
+    path in =#include "..."=. For a function defined in an included file the line range
+    is right but the URI is the /including/ file, so the jump lands in the wrong file.
+  - Hover gives nothing for type keywords such as =vec4= (empty reply): no docs for
+    types or constructors, despite the README's "documentation for symbols".
+  - The server does not advertise hover, definition, signature help or document
+    symbols in its =initialize= reply even though it implements them, and lsp-mode only
+    sends requests for advertised features. The =:initialized-fn= in the client entry
+    below adds those capabilities itself. Advertised and used as-is: completion,
+    rename, references, folding ranges, inlay hints, semantic tokens, code actions,
+    call hierarchy, color provider, workspace symbols (rename/references/inlay
+    hints/code actions/etc. not tested).
 - Release tracks follow the Godot version: =v0.2.x= (branch =support/4.5+=) for Godot
   4.5/4.6, =v0.3.x= (=master=) for Godot 4.7+. Built from =master= for Godot 4.7.2.
 
@@ -945,6 +959,57 @@ printf 'Content-Length: %d\r\n\r\n%s' ${#body} "$body" \
 In Emacs: open a =.gdshader= file, then =C-h m= should list =gdshader-mode= and
 =lsp-mode=; =M-x lsp-describe-session= should show the =gdshader-lsp= server.
 
+***** known bug: go-to-definition lands in the wrong file for =#include= symbols
+Found by testing the server directly (v0.3.1, commit =bb49279= of =master=), not yet
+seen in day-to-day use. Not reported upstream. No patch applied; the plan is to patch
+the local clone once the bug is actually hit.
+- When you will hit it: go-to-definition (=C-c l g g=, or =xref= =M-.=) on a function,
+  struct, const or variable that comes from a file pulled in with =#include=
+  (e.g. a =.gdshaderinc= in the project). Symbols defined in the same file are fine.
+  If a project never uses =#include=, this never shows up.
+- What it looks like: no error. Emacs jumps to the correct /line numbers/ but in the
+  /current/ file, i.e. you land on unrelated code near the top of the shader you are
+  editing instead of in the included file. In the test, a =helper()= defined at lines
+  1-3 of =inc.gdshaderinc= sent the cursor to lines 1-3 of the including shader.
+- Cause: the definition handler in =src/server/gdshader_server.cpp= (the
+  =TextDocument_Definition= handler, around lines 453-513) sets
+  =loc.uri = params.textDocument.uri= in every branch, i.e. the file the request came
+  from, and never the file the symbol was defined in. The needed data exists:
+  =Symbol= (=src/gdshader/semantics/symbol.hpp=) already has a =source_path= field that
+  the include handling fills in when it imports symbols.
+- Planned local fix: in each branch that returns a symbol, build the URI from
+  =sym->source_path= when it is non-empty (and not ="builtin"=), falling back to the
+  request URI. Then rebuild (=scons platform=linux target=release= in
+  =~/.local/src/gdshader-lsp-cpp=) and =M-x lsp-workspace-restart=. Note that a later
+  =git pull= may conflict with the local edit; keep it as a commit or a saved diff.
+- Related gaps (server returns nothing, Emacs shows "Not found for: ..."): go-to-definition
+  on struct type names, on struct members, and on the path inside =#include "..."=. The
+  handler only handles identifier, function-call and variable-declaration nodes;
+  =IncludeNode= has a =resolvedPath= field it never looks at.
+
+***** known gap: hover is empty for type constructors and declaration names
+Same status as the definition bug above: found by testing the server directly (v0.3.1,
+commit =bb49279=), not reported upstream, no patch. Lower priority: it is missing
+data/handler coverage, not a wrong answer.
+- What you see: hover on =vec2=, =vec4=, =mat2= etc. (constructor calls) shows nothing,
+  and so does hover on the /name/ in a declaration such as =col= in =vec4 col = ...=
+  (hover on later uses of =col= works and shows its type).
+- What does work: user and built-in functions (=mix=, =sin= show a return type and a
+  description), uniforms, consts, built-in variables (=UV=, =COLOR=). A few built-in
+  overloads have no description text in the server's data (=max=: return type only).
+- Cause, constructors: the hover handler's function-call branch only replies when
+  =lookupFunctions(name)= finds a symbol. Built-in functions come from the generated table
+  =src/generated/builtins_data.cpp=, which has no entries for =vec/ivec/uvec/bvec/mat=
+  constructors (grep found zero). The type checker treats them separately
+  (=validateConstructor= in =semantics/visitors/type_checking_visitor.cpp=, around line
+  489: a known type name is validated and the function lookup is skipped), so they are
+  validated but never recorded as something hover can describe.
+- Cause, declaration names: the hover handler has no branch for variable-declaration
+  nodes (it handles identifier, function-call, member-access and type nodes).
+- Fixing it means adding descriptions/overloads for the constructors (or a type-hover
+  branch that prints them) and a declaration branch; more work than the one-line
+  definition fix.
+
 ***** things that will bite
 - It *must* be started with =--stdio=. Without it the server defaults to TCP mode and
   a client that spawns it silently fails to attach (README warning). The command below
@@ -982,6 +1047,18 @@ In Emacs: open a =.gdshader= file, then =C-h m= should list =gdshader-mode= and
           :new-connection
           (lsp-stdio-connection (list tony/gdshader-lsp-binary "--stdio"))
           :activation-fn (lsp-activate-on "gdshader")
+          ;; The server implements hover, definition, signature help and
+          ;; document symbols but does not advertise them in its initialize
+          ;; reply, so lsp-mode never sends those requests. Add them after
+          ;; initialize (verified by hand against the server; see notes above).
+          :initialized-fn
+          (lambda (workspace)
+            (let ((caps (copy-sequence (lsp--workspace-server-capabilities workspace))))
+              (dolist (cap '(:hoverProvider :definitionProvider :documentSymbolProvider))
+                (setq caps (plist-put caps cap t)))
+              (setq caps (plist-put caps :signatureHelpProvider
+                                    '(:triggerCharacters ["(" ","])))
+              (setf (lsp--workspace-server-capabilities workspace) caps)))
           :server-id 'gdshader-lsp)))))
 #+end_src
 
@@ -1059,6 +1136,32 @@ Setup org mode basics:
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
 (use-package org-appear :ensure t :hook (org-mode . org-appear-mode))
 (setq org-appear-trigger 'always)
+#+end_src
+
+*** org latex math preview
+Inline math renders as images; needs =latex= and =dvipng= installed. Fragments must be delimited, e.g. =\(\sum_{i=1}^{3} k_i\)= or =$k_i$=.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
+(setq org-startup-with-latex-preview t
+      org-highlight-latex-and-related '(latex))
+(with-eval-after-load 'org
+  (plist-put org-format-latex-options :scale 1.6))
+
+;; auto-toggle preview when cursor enters/leaves a fragment
+(use-package org-fragtog :ensure t :hook (org-mode . org-fragtog-mode))
+#+end_src
+
+*** org refile targets
+Tasks file plus every denote note; =my/denote-org-files= is called lazily (org-refile errors on any non-org file in the list) so new notes show up without a restart.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
+(defun my/denote-org-files ()
+  "Denote files ending in .org; skips stray files like *.org.empty-*."
+  (denote-directory-files "\\.org\\'"))
+
+(setq org-refile-targets
+      '(("~/Documents/org/tasks.org" :maxlevel . 2)
+        (my/denote-org-files :maxlevel . 2))
+      org-refile-use-outline-path 'file
+      org-outline-path-complete-in-steps nil)
 #+end_src
 
 *** org-babel setup

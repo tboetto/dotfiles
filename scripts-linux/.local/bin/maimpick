@@ -6,13 +6,17 @@
 
 # variables
 output="$(date '+%y%m%d-%H%M-%S').png"
+tmp="${XDG_RUNTIME_DIR:-/tmp}/pic-${output}"
 xclip_cmd="xclip -sel clip -t image/png"
 
-case "$(printf "a selected area\\ncurrent window\\nfull screen\\na selected area (copy)\\ncurrent window (copy)\\nfull screen (copy)" | dmenu -l 6 -i -p "Screenshot which area?")" in
+case "$(printf "a selected area\\ncurrent window\\nfull screen\\na selected area (copy)\\ncurrent window (copy)\\nfull screen (copy)\\na selected area (pinta)\\ncurrent window (pinta)\\nfull screen (pinta)" | dmenu -l 9 -i -p "Screenshot which area?")" in
     "a selected area") maim -s pic-selected-"${output}" ;;
     "current window") maim -q -d 0.2 -i "$(xdotool getactivewindow)" pic-window-"${output}" ;;
     "full screen") maim -q -d 0.2 pic-full-"${output}" ;;
     "a selected area (copy)") maim -s | ${xclip_cmd} ;;
     "current window (copy)") maim -q -d 0.2 -i "$(xdotool getactivewindow)" | ${xclip_cmd} ;;
     "full screen (copy)") maim -q -d 0.2 | ${xclip_cmd} ;;
+    "a selected area (pinta)") maim -s "${tmp}" && pinta "${tmp}" ;;
+    "current window (pinta)") maim -q -d 0.2 -i "$(xdotool getactivewindow)" "${tmp}" && pinta "${tmp}" ;;
+    "full screen (pinta)") maim -q -d 0.2 "${tmp}" && pinta "${tmp}" ;;
 esac

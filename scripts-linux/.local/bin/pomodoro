@@ -45,6 +45,7 @@ case "$arg" in
 stop)
 	if [ -f "$statefile" ]; then
 		start=$(grep '^start=' "$statefile" | cut -d= -f2)
+		sdesc=$(grep '^desc=' "$statefile" | cut -d= -f2-)
 		now=$(date +%s)
 		rm -f "$statefile"
 		notify-send "🍅 Pomodoro" "Cancelled."
