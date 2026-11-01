@@ -6,19 +6,37 @@
 # What recovers it is restarting both ends together: blank the screens long enough
 # for the S9 to drop into standby, wake them, then do a real modeset on DP-0
 # (re-applying an identical layout is a no-op and won't retrain the link).
-#   usage: s9reset [layout-cmd]   (default: trimonarr)
+#   usage: s9reset [layout-cmd]   (default: trimonarr on the desktop, s9ontop on the laptop)
 #   S9_STANDBY_SECS sets how long the screens stay blanked (default 20)
+#
+# Works on both machines. The desktop's S9 is always X output DP-0 (the Planar is on
+# DP-2). On the laptop the output name moves around (DP-2, DP-1-2, ...), so the S9 is
+# the connected non-eDP output that offers 5120x2880; when it has dropped off entirely
+# the forced re-detect below brings it back under whatever name, and the next pass
+# finds it.
 
-out=DP-0
-layout="${1:-trimonarr}"
+case "$(hostname)" in
+*laptop*) laptop=true layout="${1:-s9ontop}" ;;
+*) laptop=false layout="${1:-trimonarr}" ;;
+esac
 standby="${S9_STANDBY_SECS:-20}"
 edid_copy="$HOME/.local/share/s9-edid.bin"
+
+find_s9() {
+	if $laptop; then
+		xrandr --query | awk '/^[^ ]/ { out = $1; conn = ($2 == "connected"); next }
+			conn && out !~ /^eDP/ && $1 == "5120x2880" { print out; exit }'
+	else
+		xrandr --query | grep -q '^DP-0 connected' && echo DP-0
+	fi
+}
 
 for i in 1 2 3 4 5; do
 	for c in /sys/class/drm/card*-DP-*; do
 		grep -q '^disconnected' "$c/status" && echo detect | sudo -n tee "$c/status" >/dev/null 2>&1
 	done
-	if xrandr --query | grep -q "^$out connected"; then
+	out=$(find_s9)
+	if [ -n "$out" ]; then
 		[ -e "$edid_copy" ] || for c in /sys/class/drm/card*-DP-*; do	# save the S9's EDID once (not the Planar's)
 			# sysfs reports size 0, so test for content rather than using [ -s ]
 			[ "$(head -c1 "$c/edid" | wc -c)" -eq 1 ] && ! grep -q IX2790 "$c/edid" && cp "$c/edid" "$edid_copy"

@@ -1,0 +1,83 @@
+#!/bin/sh
+# s9ontop: laptop layout for the ViewFinity S9 -- the S9 at 5K, centered above the
+# laptop panel, which stays primary. With no S9 connected, falls back to laptop only.
+#   usage: s9ontop          apply the layout once
+#          s9ontop watch    apply now, then re-apply on every display hotplug
+#
+# Output names move around on this laptop (eDP-1 vs eDP-1-1, DP-2 vs DP-1-2), so the
+# panel is whatever eDP* is connected and the S9 is whatever connected external
+# offers 5120x2880. Everything goes in one xrandr call so there is no half-applied
+# state, and a missing S9 can't abort the laptop's own config.
+#
+# Idle handling follows the S9, same as the desktop: the S9 doesn't wake after DPMS
+# sleep, so while it's connected DPMS stays off and idle only locks (xss-lock running
+# lockscreen, dimmer warning for the last 5s of 600s). Without it, the laptop gets
+# normal blanking/DPMS back and xss-lock is stopped.
+
+lap_mode=3840x2400
+s9_mode=5120x2880
+lap_w=3840
+s9_w=5120
+
+find_outputs() {
+	xrandr --query | awk -v want="$s9_mode" '
+		/^[^ ]/ { out = $1; conn = ($2 == "connected")
+			if (conn && out ~ /^eDP/) lap = out
+			next }
+		conn && $1 == want && out !~ /^eDP/ { s9 = out }
+		END { print lap, s9 }'
+}
+
+idle_with_s9() {
+	xset -dpms
+	xset s 600 5
+	xset s noblank
+	command -v xss-lock >/dev/null || { notify-send -u critical "s9ontop" "xss-lock not installed; the S9 will never lock" 2>/dev/null; return; }
+	pidof -s xss-lock >/dev/null || xss-lock -n /usr/lib/xsecurelock/dimmer -l -- lockscreen >/dev/null 2>&1 &
+}
+
+idle_without_s9() {
+	pkill -x xss-lock
+	xset +dpms
+	xset s 600 600
+	xset s blank
+}
+
+apply() {
+	set -- $(find_outputs)
+	lap=$1 s9=$2
+	[ -n "$lap" ] || return 1
+	# Turn off every other output so a stale mirror or ghost doesn't linger.
+	others=$(xrandr --query | awk -v a="$lap" -v b="$s9" '/^[^ ]/ && $1 != a && $1 != b && $1 != "Screen" { printf " --output %s --off", $1 }')
+	if [ -n "$s9" ]; then
+		# Laptop sits under the S9, horizontally centered: its x offset is half the width difference.
+		x=$(( (s9_w - lap_w) / 2 ))
+		xrandr --output "$s9" --mode "$s9_mode" --pos 0x0 --rotate normal \
+			--output "$lap" --primary --mode "$lap_mode" --pos "${x}x2880" --rotate normal $others
+		idle_with_s9
+	else
+		xrandr --output "$lap" --primary --mode "$lap_mode" --pos 0x0 --rotate normal $others
+		idle_without_s9
+	fi
+	if [ -n "$s9" ]; then msg="S9 ($s9) above $lap"; else msg="laptop only"; fi
+	notify-send "s9ontop" "$msg" 2>/dev/null
+	return 0
+}
+
+if [ "$1" = watch ]; then
+	# Apply the layout only when the S9's presence changes: applying it fires its own drm
+	# events, and without this guard the watcher would re-apply forever.
+	last=unset
+	handle() {
+		sig=$(find_outputs)
+		[ "$sig" = "$last" ] && return
+		apply && last=$sig
+	}
+	handle
+	udevadm monitor --udev --subsystem-match=drm | while read -r _; do
+		sleep 2	# let the monitor finish negotiating its modes before reading them
+		handle
+	done
+else
+	apply
+fi

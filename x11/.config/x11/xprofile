@@ -3,7 +3,9 @@
 [[ $(hostname) == *"desktop"* ]] && ISDESKTOP=true || ISDESKTOP=false;
 [[ $(hostname) == *"laptop"* ]] && ISLAPTOP=true || ISLAPTOP=false;
 
-$ISLAPTOP && xrandr --auto &	# laptop only: on the desktop, trimonarr sets the layout and --auto would race it, putting the S9 at 4K
+# laptop only: on the desktop, trimonarr sets the layout and --auto would race it, putting the S9 at 4K.
+# On the laptop, s9ontop watch runs after --auto and re-lays-out whenever the S9 is plugged or unplugged.
+$ISLAPTOP && { xrandr --auto; s9ontop watch; } >/dev/null 2>&1 &
 xrandr --dpi 220 &
 xrdb -merge "${XDG_CONFIG_HOME:-$HOME/.config}/x11/xresources"
 
@@ -14,7 +16,7 @@ rbg &
 pipewire &
 
 if $ISLAPTOP; then
-	remaps &
+	remaps watch &
 elif $ISDESKTOP; then
 	remaps &
 	trimonarr &
