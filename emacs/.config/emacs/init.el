@@ -53,8 +53,7 @@
 (use-package compat :ensure (:host github :repo "emacs-compat/compat"))
 
 (use-package org
-  :ensure (org :repo "https://git.savannah.gnu.org/git/emacs/org-mode.git"
-               :branch "main"))
+  :ensure (org :host github :repo "bzg/org-mode" :branch "main"))
 (elpaca-wait)
 
 (when (locate-file "org-latex-preview"

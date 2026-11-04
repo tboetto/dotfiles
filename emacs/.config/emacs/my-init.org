@@ -206,13 +206,12 @@ Packages exclusively on GNU/NonGNU ELPA have explicit =:ensure= recipes in their
 *** Org from the upstream development branch
 Replaces the Org bundled with Emacs. Must stay above every package that requires =org=, and must be followed by =elpaca-wait= so the build is on =load-path= before they load.
 
-If =git.savannah.gnu.org= is blocked on the corporate network, use the GitHub mirror instead: =:repo "https://github.com/emacsmirror/org"= and drop =:branch=, so the mirror's default branch is used.
+Cloned from =bzg/org-mode=, the GitHub mirror of the Savannah repository kept by Bastien Guerry (long-time Org maintainer; the repository is marked mirror-only), because =git.savannah.gnu.org= is blocked or unreliable on some networks. Org's own docs also list =https://git.sr.ht/~bzg/org-mode= as a non-GitHub mirror. Keep =:branch "main"=: the =emacsmirror/org= mirror defaults to =master= and lags the development branch.
 
 The development branch is only here for =org-latex-preview=. Once the Org bundled with Emacs ships that library, a startup warning says this block can go. The check looks in Emacs's own =lisp/org/= directory rather than at =load-path=, because the elpaca build shadows the bundled Org there.
 #+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
 (use-package org
-  :ensure (org :repo "https://git.savannah.gnu.org/git/emacs/org-mode.git"
-               :branch "main"))
+  :ensure (org :host github :repo "bzg/org-mode" :branch "main"))
 (elpaca-wait)
 
 (when (locate-file "org-latex-preview"
