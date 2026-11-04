@@ -6,10 +6,10 @@
 
 - Make every change to a tangled file in `my-init.org`, never in the `.el` file directly. Edits to a tangled `.el` are overwritten the next time the org file is tangled.
 - Put explanatory prose in the org heading text around the block rather than in comments inside the block, matching the existing sections.
-- After editing, tangle with the running Emacs:
+- After editing, tangle with the running Emacs from inside the repo. The path must be absolute because the Emacs server resolves it against its own working directory, not the shell's:
 
   ```sh
-  emacsclient --eval '(progn (require (quote ob-tangle)) (org-babel-tangle-file "/Users/c131265/dotfiles/emacs/.config/emacs/my-init.org" nil "emacs-lisp"))'
+  emacsclient --eval "(progn (require 'ob-tangle) (org-babel-tangle-file \"$(git rev-parse --show-toplevel)/emacs/.config/emacs/my-init.org\" nil \"emacs-lisp\"))"
   ```
 
 - Review `git diff` on the tangled `.el` files to confirm only the intended lines changed, then stage both `my-init.org` and the regenerated `.el` files by path.

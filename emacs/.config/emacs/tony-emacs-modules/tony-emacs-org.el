@@ -47,11 +47,16 @@
 
 (setq org-startup-with-latex-preview t
       org-highlight-latex-and-related '(latex))
-(with-eval-after-load 'org
-  (plist-put org-format-latex-options :scale 1.6))
+(add-hook 'org-mode-hook #'org-latex-preview-mode)
 
-;; auto-toggle preview when cursor enters/leaves a fragment
-(use-package org-fragtog :ensure t :hook (org-mode . org-fragtog-mode))
+;; pixel-aligns table columns so latex preview images do not skew the pipes
+(use-package valign :ensure (:host github :repo "casouri/valign") :hook (org-mode . valign-mode))
+
+(use-package auctex
+  :ensure (:host github :repo "emacsmirror/auctex" :files ("texmathp.el"))
+  :defer t)
+(use-package tempel :ensure t :defer t)
+(use-package laas :ensure t :hook (org-mode . laas-mode))
 
 (defun my/denote-org-files ()
   "Denote files ending in .org; skips stray files like *.org.empty-*."

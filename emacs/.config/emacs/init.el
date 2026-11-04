@@ -50,6 +50,20 @@
 ;; GNU ELPA transitive dependencies (moved off MELPA, needed by lsp-mode).
 ;; Declared early so elpaca has their recipes before processing the queue.
 (use-package spinner :ensure (:host github :repo "Malabarba/spinner.el"))
+(use-package compat :ensure (:host github :repo "emacs-compat/compat"))
+
+(use-package org
+  :ensure (org :repo "https://git.savannah.gnu.org/git/emacs/org-mode.git"
+               :branch "main"))
+(elpaca-wait)
+
+(when (locate-file "org-latex-preview"
+                   (list (expand-file-name "org" lisp-directory))
+                   '(".elc" ".el" ".el.gz"))
+  (display-warning
+   'tony-init
+   (format "Emacs %s bundles org-latex-preview; remove the Org development branch block from my-init.org."
+           emacs-version)))
 
 (setq ring-bell-function #'ignore)
 (setq inhibit-startup-message t)
@@ -87,7 +101,7 @@
 (add-hook 'minibuffer-setup-hook #'cursor-intangible-mode)
 
 (setq enable-recursive-minibuffers t)
-(minibuffer-depth-indicate-mode 1)
+(minibuffer-depth-indicate-mode 1)  
 
 (setq custom-file (locate-user-emacs-file "custom-vars.el"))
 (load custom-file 'noerror 'nomessage)

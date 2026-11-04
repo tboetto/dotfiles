@@ -191,7 +191,7 @@ This way you can use elpaca with use-package.
 
 *** Remove blocked ELPA menu sources
 =elpa.gnu.org= and =elpa.nongnu.org= are blocked on the corporate network.
-Packages exclusively on GNU/NonGNU ELPA have explicit =:ensure= recipes in their modules.
+Packages exclusively on GNU/NonGNU ELPA have explicit =:ensure= recipes in their modules, except dependencies needed before the modules load (=spinner= for lsp-mode, =compat= for the Org block below), which are declared here.
 #+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
 (setq elpaca-menu-functions
       (remq 'elpaca-menu-gnu-elpa
@@ -200,6 +200,28 @@ Packages exclusively on GNU/NonGNU ELPA have explicit =:ensure= recipes in their
 ;; GNU ELPA transitive dependencies (moved off MELPA, needed by lsp-mode).
 ;; Declared early so elpaca has their recipes before processing the queue.
 (use-package spinner :ensure (:host github :repo "Malabarba/spinner.el"))
+(use-package compat :ensure (:host github :repo "emacs-compat/compat"))
+#+end_src
+
+*** Org from the upstream development branch
+Replaces the Org bundled with Emacs. Must stay above every package that requires =org=, and must be followed by =elpaca-wait= so the build is on =load-path= before they load.
+
+If =git.savannah.gnu.org= is blocked on the corporate network, use the GitHub mirror instead: =:repo "https://github.com/emacsmirror/org"= and drop =:branch=, so the mirror's default branch is used.
+
+The development branch is only here for =org-latex-preview=. Once the Org bundled with Emacs ships that library, a startup warning says this block can go. The check looks in Emacs's own =lisp/org/= directory rather than at =load-path=, because the elpaca build shadows the bundled Org there.
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(use-package org
+  :ensure (org :repo "https://git.savannah.gnu.org/git/emacs/org-mode.git"
+               :branch "main"))
+(elpaca-wait)
+
+(when (locate-file "org-latex-preview"
+                   (list (expand-file-name "org" lisp-directory))
+                   '(".elc" ".el" ".el.gz"))
+  (display-warning
+   'tony-init
+   (format "Emacs %s bundles org-latex-preview; remove the Org development branch block from my-init.org."
+           emacs-version)))
 #+end_src
 
 ** Basic emacs configuration
@@ -673,7 +695,7 @@ config
 Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-ls) trust the corporate CA bundle (~/.certs/ca-bundle.pem)
 
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-miscellaneous.el" :mkdirp yes
-;;; tony-emacs-miscellaneous.el --- Odds and ends: shell env, compat, markdown  -*- lexical-binding: t; -*-
+;;; tony-emacs-miscellaneous.el --- Odds and ends: shell env, markdown  -*- lexical-binding: t; -*-
 (use-package
  exec-path-from-shell
  :ensure t
@@ -681,11 +703,6 @@ Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-l
  (when (memq window-system '(mac ns x))
    (add-to-list 'exec-path-from-shell-variables "NODE_EXTRA_CA_CERTS")
    (exec-path-from-shell-initialize)))
-#+end_src
-
-#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-miscellaneous.el" :mkdirp yes
-(use-package compat
-  :ensure (:host github :repo "emacs-compat/compat" :type git :wait t))
 #+end_src
 
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-miscellaneous.el" :mkdirp yes
@@ -1139,15 +1156,68 @@ Setup org mode basics:
 #+end_src
 
 *** org latex math preview
-Inline math renders as images; needs =latex= and =dvipng= installed. Fragments must be delimited, e.g. =\(\sum_{i=1}^{3} k_i\)= or =$k_i$=.
+Inline math renders as images through Org's =org-latex-preview=. Fragments must be delimited, e.g. =\(\sum_{i=1}^{3} k_i\)= or =$k_i$=. =org-latex-preview-mode= reveals the source while the cursor is inside a fragment and previews new fragments as they are typed. Images are sized relative to the surrounding font, so they follow =text-scale-adjust= without any =:zoom= or =:scale= setting; set =:zoom= in =org-latex-preview-appearance-options= only to make math larger or smaller than the text.
+
+| Requirement      | Purpose                                                   |
+|------------------+-----------------------------------------------------------|
+| =latex=          | compiles each batch of fragments to DVI                   |
+| =dvisvgm= (3.2+) | converts DVI to SVG, the default when it is on =PATH=     |
+| =preview.sty=    | crops each fragment; without it no previews render        |
+| =mylatexformat=  | precompiles the preamble; without it every run recompiles |
+
+On macOS, MacTeX ships all four:
+
+#+begin_src sh
+brew install --cask mactex-no-gui
+#+end_src
+
+or, with the smaller BasicTeX:
+
+#+begin_src sh
+brew install --cask basictex
+sudo tlmgr update --self
+sudo tlmgr install dvisvgm preview mylatexformat
+#+end_src
+
+On Arch Linux, =preview= and =mylatexformat= are in =texlive-latexextra= and =dvisvgm= is packaged on its own:
+
+#+begin_src sh
+sudo pacman -S texlive-basic texlive-bin texlive-latex texlive-latexextra dvisvgm
+#+end_src
+
+Check with =kpsewhich preview.sty mylatexformat.ltx= (both paths should print) and =dvisvgm --version=.
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
 (setq org-startup-with-latex-preview t
       org-highlight-latex-and-related '(latex))
-(with-eval-after-load 'org
-  (plist-put org-format-latex-options :scale 1.6))
+(add-hook 'org-mode-hook #'org-latex-preview-mode)
 
-;; auto-toggle preview when cursor enters/leaves a fragment
-(use-package org-fragtog :ensure t :hook (org-mode . org-fragtog-mode))
+;; pixel-aligns table columns so latex preview images do not skew the pipes
+(use-package valign :ensure (:host github :repo "casouri/valign") :hook (org-mode . valign-mode))
+#+end_src
+
+*** org math input (laas)
+=laas= (LaTeX Auto Activating Snippets) expands keys as they are typed, but only inside math fragments and LaTeX environments, so prose is never touched. =M-x laas-mode= toggles it in the current buffer.
+
+laas requires =texmathp=, which ships with AUCTeX. AUCTeX is not on MELPA and the GNU ELPA menu and Savannah are unavailable here, so =auctex= comes from the GitHub mirror and links only =texmathp.el=. =tempel= gives fraction snippets fields: =M-}= moves from numerator to denominator.
+
+| Keys                     | Result                                          |
+|--------------------------+-------------------------------------------------|
+| =sin= =cos= =tan=        | =\sin= etc., with a space after                 |
+| =;a= =;p= =;q=           | =\alpha= =\pi= =\theta= (=;= prefixes Greek)    |
+| =//=                     | =\frac{}{}=                                     |
+| =3/=, =(a+b)/=           | =\frac{3}{}=, wrapping the object to the left   |
+| =x1=, =sr=, =cb=         | =x_1=, =^2=, =^3=                               |
+| ='q= ='.= ='-= ='>=      | wrap the previous object in sqrt, dot, bar, vec |
+| ~<=~ ~>=~ ~!=~ ~~=~ ~=>~ | =\leq= =\geq= =\neq= =\approx= =\implies=       |
+| =**=, =xx=               | =\cdot=, =\times=                               |
+
+Two surprises: ~==~ becomes ~&=~ (meant for align environments), and function keys fire mid-word, so =arcsin= becomes =arc\sin=. A backslash before the key suppresses expansion, so type =\arcsin= directly.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
+(use-package auctex
+  :ensure (:host github :repo "emacsmirror/auctex" :files ("texmathp.el"))
+  :defer t)
+(use-package tempel :ensure t :defer t)
+(use-package laas :ensure t :hook (org-mode . laas-mode))
 #+end_src
 
 *** org refile targets
