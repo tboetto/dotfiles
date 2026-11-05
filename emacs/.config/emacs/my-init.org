@@ -1155,7 +1155,7 @@ Setup org mode basics:
 #+end_src
 
 *** org latex math preview
-Inline math renders as images through Org's =org-latex-preview=. Fragments must be delimited, e.g. =\(\sum_{i=1}^{3} k_i\)= or =$k_i$=. =org-latex-preview-mode= reveals the source while the cursor is inside a fragment and previews new fragments as they are typed. Images are sized relative to the surrounding font, so they follow =text-scale-adjust= without any =:zoom= or =:scale= setting; set =:zoom= in =org-latex-preview-appearance-options= only to make math larger or smaller than the text.
+Inline math renders as images through Org's =org-latex-preview=. Fragments must be delimited, e.g. =\(\sum_{i=1}^{3} k_i\)= or =$k_i$=. =org-latex-preview-mode= reveals the source while the cursor is inside a fragment and previews new =\(...\)=, =\[...\]= and =\begin= fragments when the cursor leaves them. =$...$= and =$$...$$= fragments are only previewed by =M-x org-latex-preview=, so write math with the backslash delimiters. Images are sized relative to the surrounding font, so they follow =text-scale-adjust= without any =:zoom= or =:scale= setting; set =:zoom= in =org-latex-preview-appearance-options= only to make math larger or smaller than the text.
 
 | Requirement      | Purpose                                                   |
 |------------------+-----------------------------------------------------------|
@@ -1185,10 +1185,16 @@ sudo pacman -S texlive-basic texlive-bin texlive-latex texlive-latexextra dvisvg
 #+end_src
 
 Check with =kpsewhich preview.sty mylatexformat.ltx= (both paths should print) and =dvisvgm --version=.
+
+Org skips the colour commands for a fragment whose neighbour in the buffer has the same colours, assuming the neighbour set them. That neighbour may be a cached image from an earlier run, so a batch of newly compiled fragments can contain no colour command at all, and every image in it comes out black: invisible on a dark theme. =org-latex-preview--tex-styled= is advised to always emit the colour. Previews generated before the advice stay black until =M-x org-latex-preview-clear-cache= and a fresh preview. Check that a regenerated preview adapts to the theme by switching themes: its SVG uses =currentColor=.
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
 (setq org-startup-with-latex-preview t
       org-highlight-latex-and-related '(latex))
 (add-hook 'org-mode-hook #'org-latex-preview-mode)
+(with-eval-after-load 'org-latex-preview
+  (define-advice org-latex-preview--tex-styled (:filter-args (args) always-emit-color)
+    (pcase-let ((`(,type ,value ,options) args))
+      (list type value (plist-put (copy-sequence options) :continue-color nil)))))
 
 ;; pixel-aligns table columns so latex preview images do not skew the pipes
 (use-package valign :ensure (:host github :repo "casouri/valign") :hook (org-mode . valign-mode))
@@ -1209,6 +1215,9 @@ laas requires =texmathp=, which ships with AUCTeX. AUCTeX is not on MELPA and th
 | ='q= ='.= ='-= ='>=      | wrap the previous object in sqrt, dot, bar, vec |
 | ~<=~ ~>=~ ~!=~ ~~=~ ~=>~ | =\leq= =\geq= =\neq= =\approx= =\implies=       |
 | =**=, =xx=               | =\cdot=, =\times=                               |
+| =;;m=, =;;M=             | =\(\)= or =\[\]= with point between, in prose   |
+
+=;;m= (inline) and =;;M= (display) start a fragment in prose, so the other keys work straight away: laas only sees math inside a complete fragment, and electric-pair does not close =\(= or =$= correctly. They sit on the =;;= prefix because =;m= and =;d= are already laas snippets, and a key that is a complete snippet cannot also begin a longer one. They only fire at the start of a word, and never inside math, source or example blocks, or verbatim and code markup.
 
 Two surprises: ~==~ becomes ~&=~ (meant for align environments), and function keys fire mid-word, so =arcsin= becomes =arc\sin=. A backslash before the key suppresses expansion, so type =\arcsin= directly.
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
@@ -1216,7 +1225,21 @@ Two surprises: ~==~ becomes ~&=~ (meant for align environments), and function ke
   :ensure (:host github :repo "emacsmirror/auctex" :files ("texmathp.el"))
   :defer t)
 (use-package tempel :ensure t :defer t)
-(use-package laas :ensure t :hook (org-mode . laas-mode))
+(use-package laas
+  :ensure t
+  :hook (org-mode . laas-mode)
+  :config
+  (defun my/org-math-start-p ()
+    "Non-nil at the start of a word in Org prose, outside math, code blocks and verbatim text."
+    (ignore-errors
+      (and (not (laas-mathp))
+           (or (bolp) (memq (char-before) '(?\s ?\t ?\()))
+           (not (org-in-block-p '("src" "example" "export")))
+           (not (memq (org-element-type (org-element-context)) '(verbatim code))))))
+  (aas-set-snippets 'laas-mode
+    :cond #'my/org-math-start-p
+    ";;m" (lambda () (interactive) (insert "\\(\\)") (backward-char 2))
+    ";;M" (lambda () (interactive) (insert "\\[\\]") (backward-char 2))))
 #+end_src
 
 *** org refile targets

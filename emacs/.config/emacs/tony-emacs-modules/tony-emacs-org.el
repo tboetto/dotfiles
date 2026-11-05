@@ -48,6 +48,10 @@
 (setq org-startup-with-latex-preview t
       org-highlight-latex-and-related '(latex))
 (add-hook 'org-mode-hook #'org-latex-preview-mode)
+(with-eval-after-load 'org-latex-preview
+  (define-advice org-latex-preview--tex-styled (:filter-args (args) always-emit-color)
+    (pcase-let ((`(,type ,value ,options) args))
+      (list type value (plist-put (copy-sequence options) :continue-color nil)))))
 
 ;; pixel-aligns table columns so latex preview images do not skew the pipes
 (use-package valign :ensure (:host github :repo "casouri/valign") :hook (org-mode . valign-mode))
@@ -56,7 +60,21 @@
   :ensure (:host github :repo "emacsmirror/auctex" :files ("texmathp.el"))
   :defer t)
 (use-package tempel :ensure t :defer t)
-(use-package laas :ensure t :hook (org-mode . laas-mode))
+(use-package laas
+  :ensure t
+  :hook (org-mode . laas-mode)
+  :config
+  (defun my/org-math-start-p ()
+    "Non-nil at the start of a word in Org prose, outside math, code blocks and verbatim text."
+    (ignore-errors
+      (and (not (laas-mathp))
+           (or (bolp) (memq (char-before) '(?\s ?\t ?\()))
+           (not (org-in-block-p '("src" "example" "export")))
+           (not (memq (org-element-type (org-element-context)) '(verbatim code))))))
+  (aas-set-snippets 'laas-mode
+    :cond #'my/org-math-start-p
+    ";;m" (lambda () (interactive) (insert "\\(\\)") (backward-char 2))
+    ";;M" (lambda () (interactive) (insert "\\[\\]") (backward-char 2))))
 
 (defun my/denote-org-files ()
   "Denote files ending in .org; skips stray files like *.org.empty-*."
