@@ -92,6 +92,27 @@ file; it still needs loading into fcron's spool with =fcrontab
 ~/.local/bin/cron/fcrontab= on each machine (see =linux-tricks.org= for the
 full fcron setup).
 
+** music
+
+=music= stows the MPD and ncmpcpp configs. MPD reads and writes playlists
+in =~/Music=, the root of the synced Music folder, so playlist paths are
+relative to that folder. MPD runs as an OpenRC user service; see
+[[*system][system]] for installing it.
+
+** system
+
+Files that live outside =$HOME= and are copied into place with =sudo=
+rather than stowed. The directory mirrors the target layout under =/=, and
+it is not in any stow package list. =system/etc/user/init.d/mpd= is the
+OpenRC user service for MPD; it needs the =pipewire= user service
+(=pipewire-openrc=).
+
+#+begin_src sh
+sudo install -m 755 system/etc/user/init.d/mpd /etc/user/init.d/mpd
+rc-update --user add mpd default
+rc-service --user mpd start
+#+end_src
+
 ** shell
 
 Zsh config is at =~/.config/zsh/.zshrc=. Aliases are in

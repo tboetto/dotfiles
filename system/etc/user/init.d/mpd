@@ -1,0 +1,12 @@
+#!/sbin/openrc-run
+
+depend(){
+	need pipewire
+}
+
+
+description="Music Player Daemon"
+
+supervisor=supervise-daemon
+command="/usr/bin/mpd"
+command_args="--no-daemon"
