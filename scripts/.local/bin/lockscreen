@@ -9,11 +9,11 @@
 # Stop xcompmgr while locked: with it running, the screens kept showing the stale desktop
 # until the mouse moved. It's restarted after unlock.
 # Logs go to ~/.local/state/lockscreen/lock.log (xsecurelock + mpv stderr, plus display state
-# at lock, every 60 s while locked, and at unlock). Kept to the last 1000 lines.
+# at lock, every 60 s while locked, and at unlock; no xrandr, its probes disturb the displays). Kept to the last 1000 lines.
 log=${XDG_STATE_HOME:-$HOME/.local/state}/lockscreen/lock.log
 mkdir -p "${log%/*}"
 [ "$(wc -l <"$log" 2>/dev/null || echo 0)" -gt 1000 ] && tail -n 500 "$log" >"$log.tmp" && mv "$log.tmp" "$log"
-snap() { echo "--- $(date '+%F %T') $1"; xset q | grep -E 'timeout|DPMS|Monitor is'; xrandr --listactivemonitors | tail -n +2; pgrep -a 'mpv|xcompmgr|saver_mpv' | cut -c1-80; }
+snap() { echo "--- $(date '+%F %T') $1"; xset q | grep -E 'timeout|DPMS|Monitor is'; pgrep -a 'mpv|xcompmgr|saver_mpv' | cut -c1-80; }
 snap lock >>"$log" 2>&1
 ( while sleep 60; do snap "locked-tick" >>"$log" 2>&1; done ) &
 ticker=$!
@@ -22,7 +22,7 @@ dunstctl set-paused true 2>/dev/null
 env XSECURELOCK_SAVER=saver_mpv \
 	XSECURELOCK_LIST_VIDEOS_COMMAND='find ~/animatedpapes -type f' \
 	XSECURELOCK_VIDEOS_FLAGS="--include=~/.config/xsecurelock/mpv.conf --scale=oversample --log-file=${log%/*}/mpv.log --msg-level=all=warn" \
-	XSECURELOCK_NO_COMPOSITE=1 XSECURELOCK_BLANK_TIMEOUT=-1 XSECURELOCK_BLANK_DPMS_STATE=on \
+	XSECURELOCK_NO_COMPOSITE=1 XSECURELOCK_SAVER_RESET_ON_AUTH_CLOSE=1 XSECURELOCK_BLANK_TIMEOUT=-1 XSECURELOCK_BLANK_DPMS_STATE=on \
 	XSECURELOCK_DEBUG=1 xsecurelock >>"$log" 2>&1
 kill $ticker
 snap unlock >>"$log" 2>&1

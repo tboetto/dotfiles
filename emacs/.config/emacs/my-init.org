@@ -367,6 +367,7 @@ config
   (require 'tony-emacs-miscellaneous)
   (require 'tony-emacs-visual-fill-column)
   (require 'tony-emacs-org)
+  (require 'tony-emacs-inkscape)
   (require 'tony-emacs-project)
   (require 'tony-emacs-pulsar)
   (require 'tony-emacs-fonts)
@@ -718,9 +719,11 @@ Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-l
 ;; delimiter, so one stray `"' earlier in the buffer makes every later quote
 ;; look like a closer and typing "hello" yields "hello"". Don't auto-pair `"'
 ;; in those prose-like modes; code modes keep it.
+;; Org's syntax table also makes `<' `>' a pair, so `<' would auto-close and
+;; break laas snippets like `<=', `<<' and `<>'; inhibit it there too.
 (defun my/electric-pair-no-double-quote (char)
-  "Inhibit pairing for CHAR when it is a double quote, else use the default."
-  (or (eq char ?\")
+  "Inhibit pairing for CHAR when it is `\"' or `<', else use the default."
+  (or (memq char '(?\" ?<))
       (electric-pair-default-inhibit char)))
 
 (dolist (hook '(org-mode-hook agent-shell-mode-hook))
@@ -1116,11 +1119,25 @@ Setup org mode basics:
     :config (setq org-agenda-files (list org-directory)))
 #+end_src
 
+*** org clock set up
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
+  ;; mode-line clock shows only today's clocked time (not all-time total)
+  (setq org-clock-mode-line-total 'today)
+#+end_src
+
 *** org alert setup
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
-  ;; (use-package org-alert
-  ;;   :ensure t
-  ;;   :hook (org-agenda-mode . org-alert-mode))
+  (use-package org-wild-notifier
+    :ensure t
+    :after org
+    :custom
+    ;; dunst via libnotify on Linux, osascript-based notifications on macOS
+    (alert-default-style (if (eq system-type 'darwin) 'osx-notifier 'libnotify))
+    (org-wild-notifier-alert-time '(10 0))
+    (org-wild-notifier-keyword-whitelist '("TODO" "NEXT"))
+    ;; untimed (day-wide) tasks: remind at these times
+    (org-wild-notifier-day-wide-alert-times '("09:00" "14:30"))
+    :config (org-wild-notifier-mode 1))
 #+end_src
 
 
@@ -1219,6 +1236,8 @@ laas requires =texmathp=, which ships with AUCTeX. AUCTeX is not on MELPA and th
 
 =;;m= (inline) and =;;M= (display) start a fragment in prose, so the other keys work straight away: laas only sees math inside a complete fragment, and electric-pair does not close =\(= or =$= correctly. They sit on the =;;= prefix because =;m= and =;d= are already laas snippets, and a key that is a complete snippet cannot also begin a longer one. They only fire at the start of a word, and never inside math, source or example blocks, or verbatim and code markup.
 
+The commands laas expands to but plain LaTeX lacks are defined once, in =my/latex-math-macros=. The preview preamble uses it, and so do the Inkscape figure renderer and the shortcut manager's pre-rendered text (see =inkscape.el=), so a macro added there works in all three.
+
 Two surprises: ~==~ becomes ~&=~ (meant for align environments), and function keys fire mid-word, so =arcsin= becomes =arc\sin=. A backslash before the key suppresses expansion, so type =\arcsin= directly.
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
 (use-package auctex
@@ -1238,8 +1257,34 @@ Two surprises: ~==~ becomes ~&=~ (meant for align environments), and function ke
            (not (memq (org-element-type (org-element-context)) '(verbatim code))))))
   (aas-set-snippets 'laas-mode
     :cond #'my/org-math-start-p
-    ";;m" (lambda () (interactive) (insert "\\(\\)") (backward-char 2))
-    ";;M" (lambda () (interactive) (insert "\\[\\]") (backward-char 2))))
+    ";;m" (lambda () (interactive) (tempel-insert '("\\(" p "\\)")))
+    ";;M" (lambda () (interactive) (tempel-insert '("\\[" p "\\]"))))
+  (aas-set-snippets 'laas-mode
+    :cond #'laas-mathp
+    ";;o" "^\\circ"
+    "sec" "\\sec") ; laas ships csc/cot/arcsec but no sec
+  ;; TAB leaves the fragment; tempel-map is only active during a template.
+  (with-eval-after-load 'tempel
+    (define-key tempel-map (kbd "TAB") #'tempel-next)
+    (define-key tempel-map (kbd "<tab>") #'tempel-next)
+    (define-key tempel-map (kbd "<backtab>") #'tempel-previous)
+    ;; Leave M-RET to Org (new bullet); tempel's default is tempel-done.
+    (keymap-unset tempel-map "M-RET" t)))
+
+;; laas expands to commands plain LaTeX lacks (\RR, \arcsec, \mathem, ...).
+;; \providecommand never clobbers a real one. Needs amsmath and amssymb.
+(defconst my/latex-math-macros
+  (concat (mapconcat (lambda (l) (format "\\providecommand{\\%s%s}{\\mathbb{%s}}" l l l))
+                     '("N" "Z" "Q" "R" "C" "P" "H" "F") "\n")
+          "\n\\providecommand{\\mathem}[1]{\\mathit{#1}}\n"
+          "\\DeclareMathOperator{\\arccot}{arccot}\n"
+          "\\DeclareMathOperator{\\arccsc}{arccsc}\n"
+          "\\DeclareMathOperator{\\arcsec}{arcsec}")
+  "LaTeX definitions for the commands laas snippets expand to.")
+
+(setq org-latex-preview-preamble
+      (concat "\\documentclass{article}\n[DEFAULT-PACKAGES]\n[PACKAGES]\n\\usepackage{xcolor}\n"
+              my/latex-math-macros))
 #+end_src
 
 *** org refile targets
@@ -1499,6 +1544,577 @@ possible obsidian usage
 *** provide module
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-denote.el" :mkdirp yes
 (provide 'tony-emacs-denote)
+#+end_src
+
+** ~inkscape.el~
+Figures drawn in Inkscape, shown in Org notes with their labels typeset by LaTeX. The workflow follows Gilles Castel's ([[https://castel.dev/post/lecture-notes-2][How I draw figures for my mathematical lecture notes using Inkscape]]): type a title, press one key, draw, save, carry on. The keystroke reference is =~/Documents/org/inkscape-figures-cheatsheet.org=.
+
+Linux and X11 only. The module loads on macOS but nothing in it is useful there.
+
+*** install
+#+begin_src sh
+sudo pacman -S inkscape rofi pdf2svg python-xlib xclip texlive-latexextra
+#+end_src
+
+| Requirement                 | Purpose                                                        |
+|-----------------------------+----------------------------------------------------------------|
+| =inkscape= (1.x)            | drawing, and exporting a figure as PDF plus a LaTeX text layer |
+| =pdflatex=, =pdf2svg=       | typeset the labels and turn the result back into an SVG        |
+| =standalone=, =transparent= | LaTeX packages used by the wrapper (=texlive-latexextra=)      |
+| =python-xlib=               | the shortcut manager reads keys through Xlib                   |
+| =xclip=                     | the shortcut manager pastes styles and text via the clipboard  |
+| =rofi=                      | the shortcut manager's "save as" prompt for styles and objects |
+
+The shortcut manager is not packaged. Clone it once:
+
+#+begin_src sh
+git clone https://github.com/gillescastel/inkscape-shortcut-manager ~/.local/src/clonedStuff/inkscape-shortcut-manager
+#+end_src
+
+The figure template lives beside this file in =templates/inkscape-figure.svg= and is edited by hand (open it in Inkscape, change it, save). On a new machine =restow= links the =templates= directory into =~/.config/emacs=.
+
+*** options
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-inkscape.el" :mkdirp yes
+;;; tony-emacs-inkscape.el --- Inkscape figures in Org notes  -*- lexical-binding: t; -*-
+(require 'filenotify)
+(require 'subr-x)
+
+(defvar my/latex-math-macros) ; tony-emacs-org
+(declare-function org-element-context "org-element")
+(declare-function org-element-lineage "org-element-ast")
+(declare-function org-element-property "org-element-ast")
+(declare-function org-element-begin "org-element")
+(declare-function org-element-end "org-element")
+(declare-function org-link-preview-file "ol")
+(declare-function org-link-preview-region "ol")
+(declare-function org-link-set-parameters "ol")
+(declare-function org-latex-export-to-pdf "ox-latex")
+(declare-function org-open-file "org")
+(declare-function denote-retrieve-filename-identifier "denote")
+(declare-function server-edit "server")
+(declare-function laas-mode "laas")
+(declare-function meow-insert-mode "meow")
+(declare-function x-change-window-property "xfns.c")
+
+(defgroup my/inkscape nil
+  "Inkscape figures in Org notes."
+  :group 'org)
+
+(defcustom my/inkscape-template
+  (locate-user-emacs-file "templates/inkscape-figure.svg")
+  "SVG file copied to make a new figure."
+  :type 'file)
+
+(defcustom my/inkscape-figures-directory "figures"
+  "Directory holding figures, relative to the note.
+Each note gets its own subdirectory in it."
+  :type 'string)
+
+(defcustom my/inkscape-shortcut-manager-directory
+  "~/.local/src/clonedStuff/inkscape-shortcut-manager"
+  "Clone of Castel's inkscape-shortcut-manager, or nil to never start it."
+  :type '(choice directory (const nil)))
+
+(defconst my/inkscape-shortcut-manager-config-directory
+  "~/.config/inkscape-shortcut-manager/"
+  "Where the shortcut manager looks for config.py, styles and objects.")
+#+end_src
+
+*** where figures live
+Every note has its own folder, so two notes can both have a =graph.svg=. A denote note uses its identifier, =figures/20261114T140132/graph.svg=, which stays the same when the note's title or keywords change. Any other Org file uses its base name, =figures/SICP/graph.svg=; renaming such a file means renaming the folder by hand and fixing the links.
+
+A title that would reuse a name in the same note gets a number instead of a prompt: =graph.svg=, =graph-2.svg=, =graph-3.svg=.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-inkscape.el" :mkdirp yes
+(defun my/inkscape--note-file ()
+  "File of the current note, or a `user-error' when there is none."
+  (or (buffer-file-name (buffer-base-buffer))
+      (user-error "This buffer is not visiting a file")))
+
+(defun my/inkscape--figure-dir (&optional file)
+  "Figure directory of note FILE, default the current buffer's file."
+  (let* ((file (or file (my/inkscape--note-file)))
+         (id (or (and (fboundp 'denote-retrieve-filename-identifier)
+                      (ignore-errors (denote-retrieve-filename-identifier file)))
+                 (file-name-base file))))
+    (file-name-as-directory
+     (expand-file-name
+      id (expand-file-name my/inkscape-figures-directory
+                           (file-name-directory file))))))
+
+(defun my/inkscape--rendered (file)
+  "Path of the LaTeX-rendered copy of figure FILE."
+  (expand-file-name (concat ".rendered/" (file-name-nondirectory file))
+                    (file-name-directory file)))
+
+(defun my/inkscape--slug (title dir)
+  "Turn TITLE into a file name base not yet used by an SVG in DIR."
+  (let* ((base (string-trim (replace-regexp-in-string
+                             "[^a-z0-9]+" "-" (downcase title))
+                            "-+" "-+"))
+         (base (if (string-empty-p base) "figure" base))
+         (slug base)
+         (n 1))
+    (while (file-exists-p (expand-file-name (concat slug ".svg") dir))
+      (setq slug (format "%s-%d" base (setq n (1+ n)))))
+    slug))
+
+(defun my/inkscape--link-block (title file &optional indent)
+  "Org text that includes figure FILE with caption TITLE.
+Each line is indented by INDENT columns."
+  (let ((pad (make-string (or indent 0) ?\s)))
+    (format "%s#+CAPTION: %s\n%s#+NAME: fig:%s\n%s[[file:%s]]"
+            pad title pad (file-name-base file) pad
+            (file-relative-name file))))
+#+end_src
+
+*** rendering on save
+Inkscape text is not rendered as text. On every save a watcher on the note's figure folder runs three programs in a row, in the background:
+
+1. =inkscape --export-latex= splits the figure into a PDF without text and a =.pdf_tex= file that places each text object with LaTeX;
+2. =pdflatex= compiles a small =standalone= document that loads =my/latex-math-macros= and inputs the =.pdf_tex=;
+3. =pdf2svg= turns that into =figures/<note>/.rendered/<name>.svg=.
+
+So =$\RR \to f(x)$= typed as plain text in Inkscape shows as real maths in the note, with the same macros as the inline previews. Pure black in the result is replaced by =currentColor=, which Emacs fills with the default foreground: figures are light on a dark theme and follow theme changes. Colours other than black are kept as drawn, including white fills.
+
+The Org link points at the source SVG, never at the rendered copy, so export and other tools see the real figure. =.rendered= can be deleted at any time; =M-x my/inkscape-render-figures= rebuilds it for the current note (useful on a second machine, if the folder is not synced).
+
+A failure, typically a LaTeX error in a label, leaves the previous rendered copy in place, prints a one-line message and puts the details in the =*inkscape-figures*= buffer. Inkscape writes a file more than once per save, so events are collected for half a second before a render starts, and a save that arrives during a render queues exactly one more.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-inkscape.el" :mkdirp yes
+(defvar my/inkscape--watches (make-hash-table :test #'equal)
+  "Figure directory -> file notification descriptor.")
+(defvar my/inkscape--timers (make-hash-table :test #'equal)
+  "Figure file -> pending debounce timer.")
+(defvar my/inkscape--renders (make-hash-table :test #'equal)
+  "Figure file -> `running', or `dirty' when it changed during the render.")
+
+(defun my/inkscape--watch (dir)
+  "Render figures in DIR whenever they are saved."
+  (let ((dir (file-name-as-directory (expand-file-name dir))))
+    (when (and (file-directory-p dir)
+               (not (file-notify-valid-p (gethash dir my/inkscape--watches))))
+      (puthash dir (file-notify-add-watch dir '(change) #'my/inkscape--notify)
+               my/inkscape--watches))))
+
+(defun my/inkscape--notify (event)
+  "Schedule a render for the figure that file notification EVENT is about."
+  (pcase-let* ((`(,_ ,action ,file . ,rest) event)
+               (file (if (eq action 'renamed) (car rest) file)))
+    (when (and (memq action '(created changed renamed))
+               (string-suffix-p ".svg" file)
+               (not (string-prefix-p "." (file-name-nondirectory file))))
+      (when-let* ((timer (gethash file my/inkscape--timers)))
+        (cancel-timer timer))
+      (puthash file (run-with-timer 0.5 nil #'my/inkscape--render file)
+               my/inkscape--timers))))
+
+(defun my/inkscape--log (format-string &rest args)
+  "Append a line to the *inkscape-figures* buffer."
+  (with-current-buffer (get-buffer-create "*inkscape-figures*")
+    (goto-char (point-max))
+    (insert (apply #'format format-string args) "\n")))
+
+(defun my/inkscape--render (file)
+  "Build the rendered copy of figure FILE asynchronously."
+  (remhash file my/inkscape--timers)
+  (cond
+   ((gethash file my/inkscape--renders)
+    (puthash file 'dirty my/inkscape--renders))
+   ((file-exists-p file)
+    (let* ((name (file-name-base file))
+           (dir (file-name-directory (my/inkscape--rendered file))))
+      (make-directory dir t)
+      (when (zerop (hash-table-count my/inkscape--renders))
+        (with-current-buffer (get-buffer-create "*inkscape-figures*")
+          (erase-buffer)))
+      (puthash file 'running my/inkscape--renders)
+      (my/inkscape--log "== %s  %s" (format-time-string "%T") file)
+      (delete-file (expand-file-name (concat name ".pdf_tex") dir))
+      (with-temp-file (expand-file-name (concat name ".wrap.tex") dir)
+        (insert "\\documentclass{standalone}\n"
+                "\\usepackage{graphicx,xcolor,transparent,calc,amsmath,amssymb}\n"
+                my/latex-math-macros "\n"
+                "\\begin{document}\n"
+                "\\input{" name ".pdf_tex}\n"
+                "\\end{document}\n"))
+      (my/inkscape--chain
+       file dir
+       `(("inkscape" ,file "--export-area-drawing" "--export-type=pdf"
+          "--export-latex" ,(concat "--export-filename=" dir name ".pdf"))
+         ("pdflatex" "-interaction=nonstopmode" "-halt-on-error"
+          ,(concat name ".wrap.tex"))
+         ("pdf2svg" ,(concat name ".wrap.pdf") ,(concat name ".tmp.svg"))))))))
+
+(defun my/inkscape--chain (file dir commands)
+  "Run COMMANDS one after another in DIR, then finish the render of FILE."
+  (if (null commands)
+      (my/inkscape--finish file dir)
+    (let ((default-directory dir))
+      (make-process
+       :name "inkscape-figure"
+       :buffer (get-buffer-create "*inkscape-figures*")
+       :command (car commands)
+       :connection-type 'pipe
+       :noquery t
+       :sentinel
+       (lambda (process _event)
+         (when (memq (process-status process) '(exit signal))
+           (if (zerop (process-exit-status process))
+               (my/inkscape--chain file dir (cdr commands))
+             (my/inkscape--done file dir)
+             (my/inkscape--log "!! %s failed" (caar commands))
+             (message "Figure %s: %s failed, see *inkscape-figures*"
+                      (file-name-base file) (caar commands)))))))))
+
+(defun my/inkscape--finish (file dir)
+  "Install the freshly rendered copy of FILE from DIR and show it."
+  (let ((tmp (expand-file-name (concat (file-name-base file) ".tmp.svg") dir)))
+    (with-temp-buffer
+      (insert-file-contents tmp)
+      (while (re-search-forward "rgb(0%, ?0%, ?0%)\\|#000000" nil t)
+        (replace-match "currentColor" t t))
+      (write-region nil nil tmp nil 'silent))
+    (rename-file tmp (my/inkscape--rendered file) t))
+  (my/inkscape--done file dir)
+  (my/inkscape--refresh file))
+
+(defun my/inkscape--done (file dir)
+  "Remove intermediate files for FILE in DIR; render again if it changed."
+  (dolist (ext '(".pdf" ".pdf_tex" ".wrap.tex" ".wrap.pdf" ".wrap.aux"
+                 ".wrap.log" ".tmp.svg"))
+    (delete-file (expand-file-name (concat (file-name-base file) ext) dir)))
+  (let ((state (gethash file my/inkscape--renders)))
+    (remhash file my/inkscape--renders)
+    (when (eq state 'dirty)
+      (my/inkscape--render file))))
+
+(defun my/inkscape--refresh (file)
+  "Redisplay the preview of every Org link to figure FILE."
+  (let ((name (file-name-nondirectory file)))
+    (dolist (buffer (buffer-list))
+      (with-current-buffer buffer
+        (when (derived-mode-p 'org-mode)
+          (save-excursion
+            (save-restriction
+              (widen)
+              (goto-char (point-min))
+              (while (search-forward name nil t)
+                (when-let* ((link (org-element-lineage
+                                   (save-excursion (backward-char)
+                                                   (org-element-context))
+                                   'link t))
+                            ((equal (org-element-property :type link) "file"))
+                            ((equal (expand-file-name
+                                     (org-element-property :path link))
+                                    file)))
+                  (org-link-preview-region nil t (org-element-begin link)
+                                           (org-element-end link)))))))))))
+
+(defun my/inkscape-render-figures ()
+  "Render every figure of the current note again."
+  (interactive nil org-mode)
+  (let* ((dir (my/inkscape--figure-dir))
+         (files (and (file-directory-p dir)
+                     (directory-files dir t "\\`[^.].*\\.svg\\'"))))
+    (mapc #'my/inkscape--render files)
+    (message "Rendering %d figure(s)" (length files))))
+#+end_src
+
+*** showing the rendered copy
+The =file= link type's =:preview= function is wrapped: a link to an SVG that has a rendered copy beside it shows the copy, anything else behaves as before. Link previews are switched on for every Org buffer at startup (=C-c C-x C-v= toggles them in a buffer), and opening a note starts the watcher if the note already has a figure folder.
+
+A new figure shows as an empty box the size of the page until its first save from Inkscape. A figure with no rendered copy (drawn elsewhere, or =.rendered= deleted) is shown raw: black on transparent, hard to see on a dark theme, until it is saved again or =M-x my/inkscape-render-figures= is run.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-inkscape.el" :mkdirp yes
+(defun my/inkscape--link-preview (ov path link)
+  "Preview file link PATH in OV, preferring a rendered figure copy.
+See `org-link-preview-file' for OV, PATH and LINK."
+  (let ((rendered (and (string-suffix-p ".svg" path t)
+                       (my/inkscape--rendered (expand-file-name path)))))
+    (org-link-preview-file
+     ov (if (and rendered (file-exists-p rendered)) rendered path) link)))
+
+(defun my/inkscape--org-setup ()
+  "Watch the current note's figure directory if it has one."
+  (when (buffer-file-name (buffer-base-buffer))
+    (my/inkscape--watch (my/inkscape--figure-dir))))
+
+(setq org-startup-with-link-previews t)
+(add-hook 'org-mode-hook #'my/inkscape--org-setup)
+(with-eval-after-load 'ol
+  (org-link-set-parameters "file" :preview #'my/inkscape--link-preview))
+#+end_src
+
+*** the one key: =C-c e=
+=C-c e= (=SPC c e= in meow normal state) in an Org buffer does one of three things, depending on the current line:
+
+| Line                       | What happens                                                                                 |
+|----------------------------+----------------------------------------------------------------------------------------------|
+| has a link to an =.svg=    | opens that figure in Inkscape                                                                |
+| has other text             | the text is the title: creates the figure from the template, replaces the line with caption, name and link, opens Inkscape |
+| is empty                   | asks which of this note's figures to open, newest first, and puts its link block on the kill ring |
+
+Opening a figure also starts the watcher for its folder and the shortcut manager. Inkscape is started detached, so it survives an Emacs restart.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-inkscape.el" :mkdirp yes
+(defun my/inkscape--open (file)
+  "Edit figure FILE in Inkscape."
+  (unless (executable-find "inkscape")
+    (user-error "Inkscape is not installed"))
+  (my/inkscape--watch (file-name-directory file))
+  (my/inkscape-shortcut-manager-start)
+  (call-process "inkscape" nil 0 nil file))
+
+(defun my/inkscape--create (title)
+  "Replace the current line with a new figure called TITLE and open it."
+  (unless (file-exists-p my/inkscape-template)
+    (user-error "No figure template at %s" my/inkscape-template))
+  (let* ((dir (my/inkscape--figure-dir))
+         (file (expand-file-name
+                (concat (my/inkscape--slug title dir) ".svg") dir))
+         (indent (current-indentation)))
+    (make-directory dir t)
+    (copy-file my/inkscape-template file)
+    (delete-region (pos-bol) (pos-eol))
+    (insert (my/inkscape--link-block title file indent))
+    (my/inkscape--open file)
+    (message "Created %s" (file-relative-name file))))
+
+(defun my/inkscape--pick ()
+  "Choose one of the current note's figures, open it and copy its link."
+  (let* ((dir (my/inkscape--figure-dir))
+         (files (and (file-directory-p dir)
+                     (sort (directory-files dir t "\\`[^.].*\\.svg\\'")
+                           #'file-newer-than-file-p)))
+         (names (mapcar #'file-name-base files)))
+    (unless names
+      (user-error "This note has no figures yet; type a title on the line first"))
+    (let* ((name (completing-read
+                  "Figure: "
+                  (lambda (string pred action)
+                    (if (eq action 'metadata)
+                        '(metadata (display-sort-function . identity)
+                                   (cycle-sort-function . identity))
+                      (complete-with-action action names string pred)))
+                  nil t))
+           (file (expand-file-name (concat name ".svg") dir)))
+      (kill-new (my/inkscape--link-block
+                 (let ((title (string-replace "-" " " name)))
+                   (concat (upcase (substring title 0 1)) (substring title 1)))
+                 file))
+      (my/inkscape--open file)
+      (message "Opened %s; its link block is on the kill ring" name))))
+
+(defun my/inkscape-figure-dwim ()
+  "Open, create or pick an Inkscape figure, depending on the current line.
+On a line with a link to an SVG, open it.  On a line with other
+text, use the text as the title of a new figure.  On an empty
+line, choose among the note's figures."
+  (interactive nil org-mode)
+  (let ((line (string-trim (buffer-substring-no-properties (pos-bol) (pos-eol)))))
+    (cond
+     ((string-match "\\[\\[\\(?:file:\\)?\\([^]]+\\.svg\\)\\]" line)
+      (my/inkscape--open (expand-file-name (match-string 1 line))))
+     ((string-empty-p line) (my/inkscape--pick))
+     ((string-match-p "\\`\\(?:\\*+ \\|#\\+\\)" line)
+      (user-error "Put the figure title on a plain line of its own"))
+     (t (my/inkscape--create line)))))
+
+(with-eval-after-load 'org
+  (keymap-set org-mode-map "C-c e" #'my/inkscape-figure-dwim))
+#+end_src
+
+*** shortcut manager
+Castel's [[https://github.com/gillescastel/inkscape-shortcut-manager][inkscape-shortcut-manager]] grabs the keyboard of every Inkscape window and turns key chords into styles (=f= + =s= fills and strokes the selection, =a= + =d= makes a dotted arrow) and single keys into tools. It only works on X11. Emacs runs it as a subprocess the first time a figure is opened, with its output in =*inkscape-shortcut-manager*=; =M-x my/inkscape-shortcut-manager-stop= ends it, =M-x my/inkscape-shortcut-manager-start= starts it by hand. While it runs it affects every Inkscape window, including ones not opened from Emacs; the backtick key switches it off and on inside Inkscape.
+
+Just before starting it, Emacs writes =my/latex-math-macros= to =~/.config/inkscape-shortcut-manager/macros.tex=, which the config below reads, so =Shift+t= (text rendered to paths right away) knows =\RR= too.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-inkscape.el" :mkdirp yes
+(defvar my/inkscape--shortcut-manager nil
+  "The shortcut manager process.")
+
+(defun my/inkscape-shortcut-manager-start ()
+  "Start the Inkscape shortcut manager unless it is already running."
+  (interactive)
+  (let ((main (and my/inkscape-shortcut-manager-directory
+                   (expand-file-name "main.py"
+                                     my/inkscape-shortcut-manager-directory))))
+    (cond
+     ((process-live-p my/inkscape--shortcut-manager))
+     ((not (and main (file-exists-p main) (eq window-system 'x)))
+      (when (called-interactively-p 'any)
+        (message "No shortcut manager at %s, or not on X11"
+                 my/inkscape-shortcut-manager-directory)))
+     (t
+      (make-directory my/inkscape-shortcut-manager-config-directory t)
+      (with-temp-file (expand-file-name
+                       "macros.tex" my/inkscape-shortcut-manager-config-directory)
+        (insert my/latex-math-macros "\n"))
+      (let ((default-directory (file-name-directory main)))
+        (setq my/inkscape--shortcut-manager
+              (make-process
+               :name "inkscape-shortcut-manager"
+               :buffer (get-buffer-create "*inkscape-shortcut-manager*")
+               :command (list "python3" "-u" main)
+               :connection-type 'pipe
+               :noquery t)))))))
+
+(defun my/inkscape-shortcut-manager-stop ()
+  "Stop the Inkscape shortcut manager."
+  (interactive)
+  (when (process-live-p my/inkscape--shortcut-manager)
+    (delete-process my/inkscape--shortcut-manager))
+  (setq my/inkscape--shortcut-manager nil))
+#+end_src
+
+**** config.py
+The manager's configuration is kept here and tangled to =~/.config/inkscape-shortcut-manager/config.py=. The tangle command in =~/dotfiles/CLAUDE.md= only writes =emacs-lisp= blocks; for this one block run it with the language =python=:
+
+#+begin_src sh
+emacsclient --eval "(progn (require 'ob-tangle) (org-babel-tangle-file \"$HOME/dotfiles/emacs/.config/emacs/my-init.org\" nil \"python\"))"
+#+end_src
+
+It changes two things from the defaults. The text popup (=t= and =Shift+t=) is an Emacs frame instead of a terminal running Vim, and the LaTeX document used by =Shift+t= loads the shared macros. Restart the manager (=stop=, then =start=) after changing it.
+#+begin_src python :tangle "~/.config/inkscape-shortcut-manager/config.py" :mkdirp yes
+import subprocess
+from pathlib import Path
+
+MACROS = Path('~/.config/inkscape-shortcut-manager/macros.tex').expanduser()
+
+
+def open_editor(filename):
+    # Blocks until the frame is closed. Emacs recognises the frame by its
+    # name and sets it up (see `my/inkscape-latex-popup-setup').
+    subprocess.run([
+        'emacsclient', '-c',
+        '-F', '((name . "inkscape-latex") (visibility . nil)'
+              ' (width . 60) (height . 4))',
+        filename,
+    ])
+
+
+def latex_document(latex):
+    macros = MACROS.read_text() if MACROS.exists() else ''
+    return r"""
+        \documentclass[12pt,border=12pt]{standalone}
+        \usepackage[utf8]{inputenc}
+        \usepackage[T1]{fontenc}
+        \usepackage{textcomp}
+        \usepackage{amsmath, amssymb}
+        """ + macros + r"""
+        \begin{document}
+    """ + latex + r"\end{document}"
+
+
+config = {
+    'rofi_theme': None,
+    # The font only matters inside Inkscape: on save the text is typeset by
+    # LaTeX. Monospace keeps the source readable while drawing. Inkscape 1.4
+    # reads the size as px and the template counts in mm, so 13 comes out
+    # 3.4 mm high, about the size of the 10pt text LaTeX will put there.
+    'font': 'monospace',
+    'font_size': 13,
+    'open_editor': open_editor,
+    'latex_document': latex_document,
+}
+#+end_src
+
+**** the text popup
+Pressing =t= in Inkscape makes the manager write =$$= to a temporary =.tex= file and run =emacsclient -c= on it with the frame name =inkscape-latex=. The hook below recognises that name. It sits on =server-switch-hook= because =server-after-make-frame-hook= runs before the file is visited. The frame is created invisible, marked as a dialog window (dwm floats dialogs, so no rule in dwm's =config.h= is needed), shown, and moved to the bottom centre of the monitor it is on. The buffer gets =laas-mode=, point goes between the two dollar signs and meow switches to insert state, so typing can start at once.
+
+| Key       | In the popup                                             |
+|-----------+----------------------------------------------------------|
+| =C-c C-c= | save, close, and let the manager paste the text          |
+| =C-c C-k= | cancel: close without adding anything                    |
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-inkscape.el" :mkdirp yes
+(defvar-keymap my/inkscape-latex-popup-mode-map
+  "C-c C-c" #'my/inkscape-latex-popup-finish
+  "C-c C-k" #'my/inkscape-latex-popup-cancel)
+
+(define-minor-mode my/inkscape-latex-popup-mode
+  "Keys for the LaTeX popup opened from Inkscape."
+  :lighter " InkTeX")
+
+(defun my/inkscape-latex-popup-finish ()
+  "Save the popup's text and hand it back to Inkscape."
+  (interactive)
+  (save-buffer)
+  (server-edit))
+
+(defun my/inkscape-latex-popup-cancel ()
+  "Close the popup without adding text to the figure."
+  (interactive)
+  (erase-buffer)
+  (insert "$$")
+  (my/inkscape-latex-popup-finish))
+
+(defun my/inkscape-latex-popup-setup ()
+  "Set up a frame that the shortcut manager opened for LaTeX input."
+  (let ((frame (selected-frame)))
+    (when (equal (frame-parameter frame 'name) "inkscape-latex")
+      (when (eq (framep frame) 'x)
+        (x-change-window-property
+         "_NET_WM_WINDOW_TYPE" '("_NET_WM_WINDOW_TYPE_DIALOG")
+         frame "ATOM" 32 t))
+      (make-frame-visible frame)
+      (pcase-let ((`(,x ,y ,width ,height) (frame-monitor-workarea frame)))
+        (set-frame-position
+         frame
+         (+ x (/ (- width (frame-outer-width frame)) 2))
+         (+ y (- height (frame-outer-height frame) 40))))
+      (select-frame-set-input-focus frame)
+      (my/inkscape-latex-popup-mode 1)
+      (when (fboundp 'laas-mode) (laas-mode 1))
+      (goto-char (point-min))
+      (when (looking-at-p "\\$\\$") (forward-char 1))
+      (when (bound-and-true-p meow-mode) (meow-insert-mode 1)))))
+
+(add-hook 'server-switch-hook #'my/inkscape-latex-popup-setup)
+#+end_src
+
+*** PDF export
+Org's LaTeX exporter turns a link to an SVG into =\includesvg=, from the LaTeX =svg= package. That package does at export time what the watcher does on save: it runs Inkscape to split the figure into PDF and text, and LaTeX typesets the text in the document's own font. It needs the package loaded and LaTeX allowed to run programs (=-shell-escape=).
+
+=-shell-escape= lets any document being compiled run any command, so it is not switched on globally. =M-x my/inkscape-org-export-pdf= exports the current buffer with it for that one run, loading =svg= and =my/latex-math-macros= as well, and opens the PDF. =org-latex-pdf-process= itself is left alone, so =C-c C-e l p= still compiles without shell escape and will fail on a file with SVG figures.
+
+The =svg= package keeps its converted files in =svg-inkscape/= beside the exported =.tex=; it is a cache and can be deleted. Set the width per figure with =#+ATTR_LATEX: :width 0.6\linewidth= above the link.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-inkscape.el" :mkdirp yes
+(defvar org-latex-pdf-process)
+(defvar org-latex-packages-alist)
+
+(defun my/inkscape-org-export-pdf ()
+  "Export the buffer to PDF with Inkscape figures, then open the PDF.
+Shell escape is on for this one export only."
+  (interactive nil org-mode)
+  (require 'ox-latex)
+  (unless (listp org-latex-pdf-process)
+    (user-error "`org-latex-pdf-process' is not a list of commands"))
+  (let ((org-latex-pdf-process
+         (mapcar (lambda (command)
+                   (string-replace "%latex " "%latex -shell-escape " command))
+                 org-latex-pdf-process))
+        (org-latex-packages-alist
+         (append org-latex-packages-alist
+                 (list '("" "svg") my/latex-math-macros))))
+    (org-open-file (org-latex-export-to-pdf))))
+#+end_src
+
+*** tested with Inkscape 1.4.4
+The shortcut manager dates from 2020 and Inkscape 0.92, and the clone is unpatched. Checked on 2026-11-15 by sending real key events to an Inkscape 1.4.4 window:
+
+| Feature                                        | Result                                          |
+|------------------------------------------------+-------------------------------------------------|
+| chords (=f= + =s=, =a= + =d=)                  | work, including the arrow marker                |
+| =Ctrl= shortcuts passing through (=C-a= =C-s= =C-z=) | work                                      |
+| =t= popup, =C-c C-c=, =C-c C-k=, laas in =$$=  | work                                            |
+| =Shift+t= (text rendered to paths)             | works, =\RR= included                           |
+| =Shift+s= save style (rofi prompt)             | works                                           |
+| =s= apply saved style, =Shift+a=, =a=          | not confirmed: the test keys went to another window |
+
+Things to know:
+- A saved style or object is applied the moment the letters typed after =s= or =a= match exactly one name. With one style called =glass=, =s g= is enough, and typing the rest of the word runs those letters as normal keys.
+- Pasted text and objects land at the mouse pointer.
+- The manager starts a listener for every Inkscape window, including menus and tooltips; the "New window!" lines in its log are that and are harmless.
+
+*** provide module
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-inkscape.el" :mkdirp yes
+(provide 'tony-emacs-inkscape)
 #+end_src
 
 ** ~project.el~

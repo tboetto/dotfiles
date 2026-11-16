@@ -45,6 +45,7 @@ case "$(uname -s)" in
 			pbcopy='xsel --clipboard --input' \
 			pbpaste='xsel --clipboard --output'\
 			sshms="ssh tonyhs@192.168.1.64" \
+			sshst="ssh -L 8385:127.0.0.1:8384 tonyhs@192.168.1.64" \
 		;;
 	Darwin)
 		alias \

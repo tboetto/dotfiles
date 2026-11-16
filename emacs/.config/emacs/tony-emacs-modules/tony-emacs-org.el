@@ -20,9 +20,20 @@
   (("C-c A" . org-agenda))
   :config (setq org-agenda-files (list org-directory)))
 
-;; (use-package org-alert
-;;   :ensure t
-;;   :hook (org-agenda-mode . org-alert-mode))
+;; mode-line clock shows only today's clocked time (not all-time total)
+(setq org-clock-mode-line-total 'today)
+
+(use-package org-wild-notifier
+  :ensure t
+  :after org
+  :custom
+  ;; dunst via libnotify on Linux, osascript-based notifications on macOS
+  (alert-default-style (if (eq system-type 'darwin) 'osx-notifier 'libnotify))
+  (org-wild-notifier-alert-time '(10 0))
+  (org-wild-notifier-keyword-whitelist '("TODO" "NEXT"))
+  ;; untimed (day-wide) tasks: remind at these times
+  (org-wild-notifier-day-wide-alert-times '("09:00" "14:30"))
+  :config (org-wild-notifier-mode 1))
 
 (use-package
  org-modern
@@ -73,8 +84,34 @@
            (not (memq (org-element-type (org-element-context)) '(verbatim code))))))
   (aas-set-snippets 'laas-mode
     :cond #'my/org-math-start-p
-    ";;m" (lambda () (interactive) (insert "\\(\\)") (backward-char 2))
-    ";;M" (lambda () (interactive) (insert "\\[\\]") (backward-char 2))))
+    ";;m" (lambda () (interactive) (tempel-insert '("\\(" p "\\)")))
+    ";;M" (lambda () (interactive) (tempel-insert '("\\[" p "\\]"))))
+  (aas-set-snippets 'laas-mode
+    :cond #'laas-mathp
+    ";;o" "^\\circ"
+    "sec" "\\sec") ; laas ships csc/cot/arcsec but no sec
+  ;; TAB leaves the fragment; tempel-map is only active during a template.
+  (with-eval-after-load 'tempel
+    (define-key tempel-map (kbd "TAB") #'tempel-next)
+    (define-key tempel-map (kbd "<tab>") #'tempel-next)
+    (define-key tempel-map (kbd "<backtab>") #'tempel-previous)
+    ;; Leave M-RET to Org (new bullet); tempel's default is tempel-done.
+    (keymap-unset tempel-map "M-RET" t)))
+
+;; laas expands to commands plain LaTeX lacks (\RR, \arcsec, \mathem, ...).
+;; \providecommand never clobbers a real one. Needs amsmath and amssymb.
+(defconst my/latex-math-macros
+  (concat (mapconcat (lambda (l) (format "\\providecommand{\\%s%s}{\\mathbb{%s}}" l l l))
+                     '("N" "Z" "Q" "R" "C" "P" "H" "F") "\n")
+          "\n\\providecommand{\\mathem}[1]{\\mathit{#1}}\n"
+          "\\DeclareMathOperator{\\arccot}{arccot}\n"
+          "\\DeclareMathOperator{\\arccsc}{arccsc}\n"
+          "\\DeclareMathOperator{\\arcsec}{arcsec}")
+  "LaTeX definitions for the commands laas snippets expand to.")
+
+(setq org-latex-preview-preamble
+      (concat "\\documentclass{article}\n[DEFAULT-PACKAGES]\n[PACKAGES]\n\\usepackage{xcolor}\n"
+              my/latex-math-macros))
 
 (defun my/denote-org-files ()
   "Denote files ending in .org; skips stray files like *.org.empty-*."

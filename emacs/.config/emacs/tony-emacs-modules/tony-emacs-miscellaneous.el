@@ -20,9 +20,11 @@
 ;; delimiter, so one stray `"' earlier in the buffer makes every later quote
 ;; look like a closer and typing "hello" yields "hello"". Don't auto-pair `"'
 ;; in those prose-like modes; code modes keep it.
+;; Org's syntax table also makes `<' `>' a pair, so `<' would auto-close and
+;; break laas snippets like `<=', `<<' and `<>'; inhibit it there too.
 (defun my/electric-pair-no-double-quote (char)
-  "Inhibit pairing for CHAR when it is a double quote, else use the default."
-  (or (eq char ?\")
+  "Inhibit pairing for CHAR when it is `\"' or `<', else use the default."
+  (or (memq char '(?\" ?<))
       (electric-pair-default-inhibit char)))
 
 (dolist (hook '(org-mode-hook agent-shell-mode-hook))

@@ -152,6 +152,7 @@ Note: for H-s you must release <menu> before pressing `s'."
 (require 'tony-emacs-miscellaneous)
 (require 'tony-emacs-visual-fill-column)
 (require 'tony-emacs-org)
+(require 'tony-emacs-inkscape)
 (require 'tony-emacs-project)
 (require 'tony-emacs-pulsar)
 (require 'tony-emacs-fonts)

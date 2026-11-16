@@ -7,6 +7,10 @@
 # On the laptop, s9ontop watch runs after --auto and re-lays-out whenever the S9 is plugged or unplugged.
 $ISLAPTOP && { xrandr --auto; s9ontop watch; } >/dev/null 2>&1 &
 xrandr --dpi 220 &
+
+# GTK3: scale widgets/icons 2x, halve the font DPI factor so text isn't scaled twice (220 dpi total)
+export GDK_SCALE=2
+export GDK_DPI_SCALE=0.5
 xrdb -merge "${XDG_CONFIG_HOME:-$HOME/.config}/x11/xresources"
 
 dwmblocks &
