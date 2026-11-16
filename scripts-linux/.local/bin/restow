@@ -1,0 +1,26 @@
+#!/bin/sh
+
+# Makes dotfiles changes active: re-stows this machine's packages, reloads the
+# fcron spool from the tracked fcrontab, and reports dangling links and
+# uncommitted changes. Package lists match the README's "Deploy all packages".
+
+dots="${DOTFILES:-$HOME/dotfiles}"
+cd "$dots" || exit 1
+
+case "$(uname)" in
+	Darwin) pkgs="claude emacs nvim scripts scripts-macos shell" ;;
+	*) pkgs="audio claude desktop emacs music nvim scripts scripts-linux shell x11" ;;
+esac
+
+# shellcheck disable=SC2086
+stow -R -v $pkgs 2>&1 | grep -E 'LINK|UNLINK|WARNING|ERROR|conflict'
+
+fcrontab_src="$HOME/.local/bin/cron/fcrontab"
+if [ -f "$fcrontab_src" ] && command -v fcrontab >/dev/null; then
+	fcrontab "$fcrontab_src" && echo "fcron: reloaded $fcrontab_src"
+fi
+
+dangling=$(find "$HOME/.local/bin" "$HOME/.config" -maxdepth 3 -type l ! -exec test -e {} \; -print 2>/dev/null)
+[ -n "$dangling" ] && printf 'dangling links:\n%s\n' "$dangling"
+
+git status --short

@@ -1,0 +1,29 @@
+#!/bin/sh
+
+# Pick the default audio output (PipeWire) with dmenu.
+# Running streams follow the new default unless they are pinned to a sink.
+
+sinks="$(wpctl status | awk '
+	/^Audio/ { audio=1 }
+	/^Video/ { audio=0 }
+	audio && /Sinks:/ { insinks=1; next }
+	audio && /(Sources|Filters|Streams):/ { insinks=0 }
+	insinks && /[0-9]+\./ {
+		line=$0
+		sub(/^[^0-9*]*/, "", line)
+		star = (line ~ /^\*/) ? "*" : " "
+		sub(/^\*?[ \t]*/, "", line)
+		sub(/[ \t]*\[vol:.*$/, "", line)
+		id=line; sub(/\..*/, "", id)
+		name=line; sub(/^[0-9]+\.[ \t]*/, "", name)
+		print id "\t" star " " name
+	}')"
+
+[ -z "$sinks" ] && notify-send "🔈 Audio" "No sinks found." && exit 1
+
+choice="$(printf '%s\n' "$sinks" | cut -f2- | dmenu -i -l 10 -p "Output:")" || exit
+id="$(printf '%s\n' "$sinks" | grep -F "	$choice" | head -n1 | cut -f1)"
+
+[ -n "$id" ] && wpctl set-default "$id" &&
+	notify-send "🔊 Audio output" "${choice#?? }" &&
+	pkill -RTMIN+10 "${STATUSBAR:-dwmblocks}"
