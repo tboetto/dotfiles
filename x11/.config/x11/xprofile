@@ -17,8 +17,6 @@ dwmblocks &
 
 rbg &
 
-pipewire &
-
 if $ISLAPTOP; then
 	remaps watch &
 elif $ISDESKTOP; then
