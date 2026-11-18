@@ -95,6 +95,8 @@
 (global-auto-revert-mode 1)
 (setq global-auto-revert-non-file-buffers t)
 
+(setq vc-follow-symlinks t)
+
 ;; `minibuffer-prompt-properties' already defaults to exactly these values on
 ;; Emacs 31, so only the hook is needed.
 (add-hook 'minibuffer-setup-hook #'cursor-intangible-mode)

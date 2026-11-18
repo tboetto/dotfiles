@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<keys name="My custom shortcuts">
+  <bind gaction="app.org.tony.brace" keys="k" />
+  <bind gaction="app.org.tony.axis" keys="j" />
+  <bind gaction="app.org.tony.parabola" keys="y" />
+</keys>

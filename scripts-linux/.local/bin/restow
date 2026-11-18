@@ -15,6 +15,9 @@ esac
 # shellcheck disable=SC2086
 stow -R -v $pkgs 2>&1 | grep -E 'LINK|UNLINK|WARNING|ERROR|conflict'
 
+# Unfolded so the files Inkscape writes beside these links stay out of the repo.
+[ "$(uname)" = Darwin ] || stow -R -v --no-folding inkscape 2>&1 | grep -E 'LINK|UNLINK|WARNING|ERROR|conflict'
+
 fcrontab_src="$HOME/.local/bin/cron/fcrontab"
 if [ -f "$fcrontab_src" ] && command -v fcrontab >/dev/null; then
 	fcrontab "$fcrontab_src" && echo "fcron: reloaded $fcrontab_src"

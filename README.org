@@ -47,6 +47,7 @@ stow emacs
 
 #+begin_src sh
 stow audio claude desktop emacs music nvim scripts scripts-linux shell x11
+stow --no-folding inkscape
 #+end_src
 
 *macOS*
@@ -72,6 +73,16 @@ dotfiles repo; repo-specific instructions belong in that repo's own
 Literate configuration lives in =emacs/.config/emacs/my-init.org=. Feature
 modules are loaded from =tony-emacs-modules/= and custom lisp from
 =tony-lisp/=. Uses [[https://github.com/progfolio/elpaca][Elpaca]] as the package manager.
+
+** inkscape
+
+Inkscape extensions, key bindings and the shortcut manager's config and
+saved styles, used by the figure workflow in =my-init.org= (section
+=inkscape.el=). Everything except =styles/= is tangled from =my-init.org=.
+Stow it with =--no-folding=: Inkscape and the shortcut manager write their
+own files (preferences, =macros.tex=) into these directories, and a folded
+directory link would put them in the repo. The shortcut manager itself is
+a separate clone, see =my-init.org=.
 
 ** nvim
 

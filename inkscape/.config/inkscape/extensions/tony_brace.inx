@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+  <name>Brace from line</name>
+  <id>org.tony.brace</id>
+  <effect needs-live-preview="false">
+    <object-type>path</object-type>
+    <effects-menu>
+      <submenu name="Tony"/>
+    </effects-menu>
+  </effect>
+  <script>
+    <command location="inx" interpreter="python">tony_brace.py</command>
+  </script>
+</inkscape-extension>

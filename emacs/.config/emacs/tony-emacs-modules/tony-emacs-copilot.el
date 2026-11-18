@@ -60,6 +60,7 @@
   ;; indents with `c-basic-offset'.
   (add-to-list 'copilot-indentation-alist
                '(gdshader-mode c-basic-offset))
+  (add-to-list 'copilot-indentation-alist '(org-mode 2))
   ;; Show a nerd-icons Copilot indicator in the mode-line
   (with-eval-after-load 'nerd-icons
     (defun tony/copilot-mode-line-indicator ()

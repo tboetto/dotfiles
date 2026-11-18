@@ -281,6 +281,12 @@ Emacs backup (~file~~) and autosave files stay on because I like having them as 
 (setq global-auto-revert-non-file-buffers t)
 #+end_src
 
+*** Follow stow symlinks without asking
+The config is stowed from =~/dotfiles=, so opening it through =~/.config/emacs= asks whether to follow a symlink into a git repo. That prompt also blocks =emacsclient -e= calls that visit the file, such as tangling.
+#+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
+(setq vc-follow-symlinks t)
+#+end_src
+
 *** Disable cursors in the minibuffer prompt
 #+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
 ;; `minibuffer-prompt-properties' already defaults to exactly these values on
@@ -1151,6 +1157,9 @@ Setup org mode basics:
    (setq
     org-modern-keyword nil
     org-modern-block-name nil
+    ;; valign draws tables; with both on, the rule under a header row
+    ;; comes out as a short box that ignores the column widths.
+    org-modern-table nil
     org-modern-timestamp nil
     ))
 #+end_src
@@ -1214,7 +1223,10 @@ Org skips the colour commands for a fragment whose neighbour in the buffer has t
       (list type value (plist-put (copy-sequence options) :continue-color nil)))))
 
 ;; pixel-aligns table columns so latex preview images do not skew the pipes
-(use-package valign :ensure (:host github :repo "casouri/valign") :hook (org-mode . valign-mode))
+(use-package valign
+  :ensure (:host github :repo "casouri/valign")
+  :hook (org-mode . valign-mode)
+  :custom (valign-fancy-bar t))
 #+end_src
 
 *** org math input (laas)
@@ -1233,12 +1245,15 @@ laas requires =texmathp=, which ships with AUCTeX. AUCTeX is not on MELPA and th
 | ~<=~ ~>=~ ~!=~ ~~=~ ~=>~ | =\leq= =\geq= =\neq= =\approx= =\implies=       |
 | =**=, =xx=               | =\cdot=, =\times=                               |
 | =;;m=, =;;M=             | =\(\)= or =\[\]= with point between, in prose   |
+| =flr=, =cei=             | =\lfloor \rfloor=, =\lceil \rceil= with point between |
 
 =;;m= (inline) and =;;M= (display) start a fragment in prose, so the other keys work straight away: laas only sees math inside a complete fragment, and electric-pair does not close =\(= or =$= correctly. They sit on the =;;= prefix because =;m= and =;d= are already laas snippets, and a key that is a complete snippet cannot also begin a longer one. They only fire at the start of a word, and never inside math, source or example blocks, or verbatim and code markup.
 
 The commands laas expands to but plain LaTeX lacks are defined once, in =my/latex-math-macros=. The preview preamble uses it, and so do the Inkscape figure renderer and the shortcut manager's pre-rendered text (see =inkscape.el=), so a macro added there works in all three.
 
-Two surprises: ~==~ becomes ~&=~ (meant for align environments), and function keys fire mid-word, so =arcsin= becomes =arc\sin=. A backslash before the key suppresses expansion, so type =\arcsin= directly.
+Two surprises: ~==~ becomes ~&=~ (meant for align environments), and function keys fire mid-word, so =arcsin= becomes =arc\sin=. A backslash before the key suppresses expansion, so type =\arcsin= directly. Word keys such as =sum=, =set= and =tt= go through =my/laas-word-start-p= instead, so they fire only at the start of a word and never inside a hand-typed =\emptyset= or =\mathtt=.
+
+A key that is a complete snippet cannot also begin a longer one, so =lim= rules out =limsup= (use =lsup=) and laas's =nn= subscript rules out =nnn= (use =bcap=). When two keys end on the same keystroke the longer one wins, so =dint= and =<->= are safe next to =int= and =->=.
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
 (use-package auctex
   :ensure (:host github :repo "emacsmirror/auctex" :files ("texmathp.el"))
@@ -1255,27 +1270,128 @@ Two surprises: ~==~ becomes ~&=~ (meant for align environments), and function ke
            (or (bolp) (memq (char-before) '(?\s ?\t ?\()))
            (not (org-in-block-p '("src" "example" "export")))
            (not (memq (org-element-type (org-element-context)) '(verbatim code))))))
+  (defun my/laas-word-start-p ()
+    "Non-nil in math when the snippet key does not continue a word or a \\command."
+    (and (laas-mathp)
+         (not (and (char-before)
+                   (or (eq (char-before) ?\\)
+                       (memq (get-char-code-property (char-before) 'general-category)
+                             '(Lu Ll)))))))
+  (defun my/latex-in-text-arg-p ()
+    "Non-nil when point is inside the argument of \\text, \\mbox or a \\textXX command."
+    (seq-some (lambda (open)
+                (and (eq (char-after open) ?{)
+                     (save-excursion
+                       (goto-char open)
+                       (looking-back "\\\\\\(?:text[a-z]*\\|mbox\\|intertext\\)" (line-beginning-position)))))
+              (nth 9 (syntax-ppss))))
+  (advice-add 'laas-org-mathp :after-while
+              (lambda () (not (my/latex-in-text-arg-p)))
+              '((name . my/laas-not-in-text)))
+  (defun my/tempel (template)
+    "Return a command that inserts tempel TEMPLATE."
+    (lambda () (interactive) (tempel-insert template)))
   (aas-set-snippets 'laas-mode
     :cond #'my/org-math-start-p
-    ";;m" (lambda () (interactive) (tempel-insert '("\\(" p "\\)")))
-    ";;M" (lambda () (interactive) (tempel-insert '("\\[" p "\\]"))))
+    ";;m" (my/tempel '("\\(" p "\\)"))
+    ";;M" (my/tempel '("\\[" p "\\]"))
+    ";;a" (my/tempel '("\\begin{align*}" n p n "\\end{align*}"))
+    ";;b" (my/tempel '("\\begin{" (p "" env) "}" n p n "\\end{" env "}")))
   (aas-set-snippets 'laas-mode
     :cond #'laas-mathp
     ";;o" "^\\circ"
-    "sec" "\\sec") ; laas ships csc/cot/arcsec but no sec
+    "sec" "\\sec" ; laas ships csc/cot/arcsec but no sec
+    "flr" (my/tempel '("\\lfloor " p " \\rfloor"))
+    "cei" (my/tempel '("\\lceil " p " \\rceil"))
+    "td" (my/tempel '("^{" p "}"))
+    "rd" (my/tempel '("^{(" p ")}"))
+    "__" (my/tempel '("_{" p "}"))
+    "invs" "^{-1}"
+    "compl" "^{c}"
+    "Nn" "\\cap"
+    "UU" "\\cup"
+    "bcap" (my/tempel '("\\bigcap_{" (p "i \\in I") "} "))
+    "bcup" (my/tempel '("\\bigcup_{" (p "i \\in I") "} "))
+    "ooo" "\\infty"
+    "OO" "\\emptyset"
+    "lll" "\\ell"
+    "nabl" "\\nabla"
+    "<->" "\\leftrightarrow"
+    "<!" "\\triangleleft"
+    "DD" "\\DD")
+  (aas-set-snippets 'laas-mode
+    :cond #'my/laas-word-start-p
+    "case" (my/tempel '("\\begin{cases} " p " & " p " \\\\ " p " & " p " \\end{cases}"))
+    "pmat" (my/tempel '("\\begin{pmatrix} " p " \\end{pmatrix}"))
+    "bmat" (my/tempel '("\\begin{bmatrix} " p " \\end{bmatrix}"))
+    "vmat" (my/tempel '("\\begin{vmatrix} " p " \\end{vmatrix}"))
+    "cvec" (my/tempel '("\\begin{pmatrix} " (p "x" var) "_" (p "1")
+                        " \\\\ \\vdots \\\\ " var "_" (p "n") " \\end{pmatrix}"))
+    "sum" (my/tempel '("\\sum_{" (p "n") "=" (p "1") "}^{" (p "\\infty") "} " p))
+    "prod" (my/tempel '("\\prod_{" (p "n") "=" (p "1") "}^{" (p "\\infty") "} " p))
+    "taylor" (my/tempel '("\\sum_{" (p "k" k) "=" (p "0") "}^{" (p "\\infty") "} "
+                          (p "c") "_" k " (x-" (p "a") ")^" k))
+    "lim" (my/tempel '("\\lim_{" (p "n") " \\to " (p "\\infty") "} "))
+    "lsup" (my/tempel '("\\limsup_{" (p "n") " \\to " (p "\\infty") "} "))
+    "linf" (my/tempel '("\\liminf_{" (p "n") " \\to " (p "\\infty") "} "))
+    "int" "\\int"
+    "dint" (my/tempel '("\\int_{" p "}^{" p "} " p))
+    "part" (my/tempel '("\\frac{\\partial " p "}{\\partial " p "}"))
+    "sq" (my/tempel '("\\sqrt{" p "}"))
+    "set" (my/tempel '("\\{ " p " \\}"))
+    "norm" (my/tempel '("\\| " p " \\|"))
+    "conj" (my/tempel '("\\overline{" p "}"))
+    "tt" (my/tempel '("\\text{" p "}"))
+    "sts" (my/tempel '("_\\text{" p "}"))
+    "mcal" (my/tempel '("\\mathcal{" p "}"))
+    "lrp" (my/tempel '("\\left( " p " \\right)"))
+    "lrs" (my/tempel '("\\left[ " p " \\right]"))
+    "lrb" (my/tempel '("\\left\\{ " p " \\right\\}"))
+    "lrv" (my/tempel '("\\left| " p " \\right|"))
+    "lra" (my/tempel '("\\left\\langle " p " \\right\\rangle")))
   ;; TAB leaves the fragment; tempel-map is only active during a template.
   (with-eval-after-load 'tempel
     (define-key tempel-map (kbd "TAB") #'tempel-next)
     (define-key tempel-map (kbd "<tab>") #'tempel-next)
     (define-key tempel-map (kbd "<backtab>") #'tempel-previous)
     ;; Leave M-RET to Org (new bullet); tempel's default is tempel-done.
-    (keymap-unset tempel-map "M-RET" t)))
+    (keymap-unset tempel-map "M-RET" t)
+    ;; tempel-map stays active in the whole buffer until every template is
+    ;; finished, so finish a template once point leaves it.
+    (defun my/tempel-finish-when-left ()
+      "Finish each active tempel template that point is no longer inside."
+      (when tempel--active
+        (dolist (st (copy-sequence tempel--active))
+          (let ((range (caar st)))
+            (if (not (overlay-buffer range))
+                (tempel--disable st)
+              (unless (<= (overlay-start range) (point) (overlay-end range))
+                (tempel--done st)))))))
+    (add-hook 'post-command-hook #'my/tempel-finish-when-left)
+    (defvar-local my/org-math--auto-space nil
+      "Position just after the space `my/org-math-space-after-exit' inserted.")
+    (defun my/org-math-drop-auto-space ()
+      "Delete the auto-inserted space when the next typed character is punctuation."
+      (remove-hook 'post-self-insert-hook #'my/org-math-drop-auto-space t)
+      (when (and (eql (1- (point)) my/org-math--auto-space)
+                 (memq last-command-event '(?. ?, ?? ?! ?: ?\; ?\)))
+                 (eq (char-before (1- (point))) ?\s))
+        (save-excursion (goto-char (- (point) 2)) (delete-char 1))))
+    (defun my/org-math-space-after-exit (&rest _)
+      "Insert a space after a math fragment TAB has just stepped out of."
+      (when (and (derived-mode-p 'org-mode)
+                 (looking-back "\\\\[])]" (- (point) 2))
+                 (not (looking-at-p "[[:space:][:punct:]]")))
+        (insert " ")
+        (setq my/org-math--auto-space (point))
+        (add-hook 'post-self-insert-hook #'my/org-math-drop-auto-space nil t)))
+    (advice-add 'tempel-next :after #'my/org-math-space-after-exit)))
 
 ;; laas expands to commands plain LaTeX lacks (\RR, \arcsec, \mathem, ...).
 ;; \providecommand never clobbers a real one. Needs amsmath and amssymb.
 (defconst my/latex-math-macros
   (concat (mapconcat (lambda (l) (format "\\providecommand{\\%s%s}{\\mathbb{%s}}" l l l))
-                     '("N" "Z" "Q" "R" "C" "P" "H" "F") "\n")
+                     '("N" "Z" "Q" "R" "C" "P" "H" "F" "D") "\n")
           "\n\\providecommand{\\mathem}[1]{\\mathit{#1}}\n"
           "\\DeclareMathOperator{\\arccot}{arccot}\n"
           "\\DeclareMathOperator{\\arccsc}{arccsc}\n"
@@ -1964,14 +2080,14 @@ Just before starting it, Emacs writes =my/latex-math-macros= to =~/.config/inksc
 #+end_src
 
 **** config.py
-The manager's configuration is kept here and tangled to =~/.config/inkscape-shortcut-manager/config.py=. The tangle command in =~/dotfiles/CLAUDE.md= only writes =emacs-lisp= blocks; for this one block run it with the language =python=:
+The manager's configuration is kept here and tangled into the =inkscape= stow package of the dotfiles, as are the Inkscape extensions and key file below; =restow= links them into =~/.config=. The package also holds the saved styles (=inkscape/.config/inkscape-shortcut-manager/styles/=), which are edited by hand. It is stowed without folding, so the directories under =~/.config= stay real and what Inkscape and the manager write there (preferences, =macros.tex=) stays out of the repo. The tangle command in =~/dotfiles/CLAUDE.md= only writes =emacs-lisp= blocks; for this block and the Inkscape files below run it with the languages =python= and =xml=:
 
 #+begin_src sh
-emacsclient --eval "(progn (require 'ob-tangle) (org-babel-tangle-file \"$HOME/dotfiles/emacs/.config/emacs/my-init.org\" nil \"python\"))"
+emacsclient --eval "(progn (require 'ob-tangle) (dolist (lang '(\"python\" \"xml\")) (org-babel-tangle-file \"$HOME/dotfiles/emacs/.config/emacs/my-init.org\" nil lang)))"
 #+end_src
 
 It changes two things from the defaults. The text popup (=t= and =Shift+t=) is an Emacs frame instead of a terminal running Vim, and the LaTeX document used by =Shift+t= loads the shared macros. Restart the manager (=stop=, then =start=) after changing it.
-#+begin_src python :tangle "~/.config/inkscape-shortcut-manager/config.py" :mkdirp yes
+#+begin_src python :tangle "../../../inkscape/.config/inkscape-shortcut-manager/config.py" :mkdirp yes
 import subprocess
 from pathlib import Path
 
@@ -2068,6 +2184,294 @@ Pressing =t= in Inkscape makes the manager write =$$= to a temporary =.tex= file
 (add-hook 'server-switch-hook #'my/inkscape-latex-popup-setup)
 #+end_src
 
+*** braces: =k= in Inkscape
+Inkscape has no brace tool, so a small Inkscape extension, =Extensions > Tony > Brace from line=, turns a line into a curly brace between its two ends. Draw a straight line with the Bezier pen (two clicks, the second a double-click), keep it selected and press =k=. The tip points to the left of the direction the line was drawn: drawn bottom to top it points left, left to right it points up. Press =k= again on the brace to flip it to the other side.
+
+The brace is the classic shape: quarter curls at the ends and at the tip, straight in between. Its height is fixed at 2.5 mm whatever the length, so long and short braces match, and shrinks only on braces too short for it. The line's colour and width are kept; arrowheads are removed. The brace stores its two ends in a =data-brace= attribute, which is how =k= finds them again to flip it.
+
+=k=, =j= (axes) and =y= (parabolas), described below, are free in Inkscape's default keymap and the shortcut manager passes it through. The binding lives in =~/.config/inkscape/keys/default.xml=, a link into the =inkscape= package. Inkscape rewrites it when shortcuts are changed in its preferences; tangling this file again overwrites those changes, so add other bindings here. Inkscape reads extensions and key bindings at startup: restart it after tangling. In the key file the action needs the =app.= prefix (=app.org.tony.brace=), although =inkscape --action-list= prints it without one; without the prefix the key silently does nothing.
+
+The extension and key file are tangled with the languages =python= and =xml= (see =config.py= above for the command).
+#+begin_src python :tangle "../../../inkscape/.config/inkscape/extensions/tony_brace.py" :mkdirp yes
+#!/usr/bin/env python3
+import math
+
+import inkex
+from inkex import PathElement
+
+AMPLITUDE = "2.5mm"
+
+
+class Brace(inkex.EffectExtension):
+    def effect(self):
+        amplitude = self.svg.viewport_to_unit(AMPLITUDE)
+        for node in self.svg.selection.filter(PathElement).values():
+            self.brace(node, amplitude)
+
+    def brace(self, node, amplitude):
+        ends = node.get("data-brace")
+        if ends:
+            x1, y1, x0, y0 = map(float, ends.split())
+        else:
+            points = list(node.path.end_points)
+            (x0, y0), (x1, y1) = tuple(points[0]), tuple(points[-1])
+        length = math.hypot(x1 - x0, y1 - y0)
+        if length == 0:
+            return
+        t = node.composed_transform()
+        scale = math.sqrt(abs(t.a * t.d - t.b * t.c)) or 1
+        amp = min(amplitude / scale, length / 3)
+        h = amp / 2
+        ux, uy = (x1 - x0) / length, (y1 - y0) / length
+        # Left of the direction of travel, with SVG's y axis pointing down.
+        nx, ny = uy, -ux
+
+        def p(along, out):
+            return f"{x0 + ux * along + nx * out:.4f},{y0 + uy * along + ny * out:.4f}"
+
+        m = length / 2
+        node.path = (
+            f"M {p(0, 0)} Q {p(0, h)} {p(h, h)} L {p(m - h, h)} "
+            f"Q {p(m, h)} {p(m, amp)} Q {p(m, h)} {p(m + h, h)} "
+            f"L {p(length - h, h)} Q {p(length, h)} {p(length, 0)}"
+        )
+        node.set("data-brace", f"{x0} {y0} {x1} {y1}")
+        node.set("sodipodi:nodetypes", None)
+        for key in ("marker-start", "marker-mid", "marker-end"):
+            node.style[key] = "none"
+        node.style["fill"] = "none"
+        node.style["stroke-linejoin"] = "round"
+        node.style["stroke-linecap"] = "round"
+
+
+if __name__ == "__main__":
+    Brace().run()
+#+end_src
+
+#+begin_src xml :tangle "../../../inkscape/.config/inkscape/extensions/tony_brace.inx" :mkdirp yes
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+  <name>Brace from line</name>
+  <id>org.tony.brace</id>
+  <effect needs-live-preview="false">
+    <object-type>path</object-type>
+    <effects-menu>
+      <submenu name="Tony"/>
+    </effects-menu>
+  </effect>
+  <script>
+    <command location="inx" interpreter="python">tony_brace.py</command>
+  </script>
+</inkscape-extension>
+#+end_src
+
+#+begin_src xml :tangle "../../../inkscape/.config/inkscape/keys/default.xml" :mkdirp yes
+<?xml version="1.0"?>
+<keys name="My custom shortcuts">
+  <bind gaction="app.org.tony.brace" keys="k" />
+  <bind gaction="app.org.tony.axis" keys="j" />
+  <bind gaction="app.org.tony.parabola" keys="y" />
+</keys>
+#+end_src
+
+*** axes: =j= in Inkscape
+A second extension, =Extensions > Tony > Axis from line=, turns a Bezier line into a number line. With the pen, click one end, single-click where 0 goes, double-click the other end, then press =j=. The line becomes a straight axis between the two ends, with a tick at every grid step out from 0 in both directions, and none at 0 itself. Without the middle click, 0 is at the first end. A middle click off the line is projected onto it.
+
+Ticks are one grid square apart (10 mm in the figure template); with snapping on (=x=) they land on grid points. They carry no numbers, so a tick can stand for 1 or for a million: label the ones that matter with =t=. Setting =LABELS = True= in the script numbers every tick instead (=$n$= text below a horizontal axis and left of a vertical one, counting grid squares, growing rightwards and upwards whichever end was drawn first), typeset by LaTeX on save like any other label. The axis and its ticks (and labels) are grouped: one click selects all of them, a saved colour such as =s r= recolours line and ticks, and =Ctrl+Shift+G= ungroups. The line keeps its style, so an arrowhead goes on with =a= + =s= before =j=; a chord on the finished group also styles the ticks and puts arrows on them. The ticks take the line's colour and width.
+#+begin_src python :tangle "../../../inkscape/.config/inkscape/extensions/tony_axis.py" :mkdirp yes
+#!/usr/bin/env python3
+import math
+
+import inkex
+from inkex import Group, PathElement, TextElement
+
+TICK = "1.2mm"
+GAP = "1.2mm"
+FONT = "3.4mm"
+LABELS = False
+
+
+class Axis(inkex.EffectExtension):
+    def effect(self):
+        for node in list(self.svg.selection.filter(PathElement).values()):
+            self.axis(node)
+
+    def grid_spacing(self):
+        grid = self.svg.namedview.findone("inkscape:grid")
+        if grid is not None and grid.get("spacingx"):
+            return float(grid.get("spacingx"))
+        return self.svg.viewport_to_unit("10mm")
+
+    def axis(self, node):
+        points = [tuple(p) for p in node.path.end_points]
+        if len(points) < 2:
+            return
+        (sx, sy), (ex, ey) = points[0], points[-1]
+        zx, zy = points[1] if len(points) > 2 else points[0]
+        length = math.hypot(ex - sx, ey - sy)
+        if length == 0:
+            return
+        t = node.composed_transform()
+        scale = math.sqrt(abs(t.a * t.d - t.b * t.c)) or 1
+        spacing = self.grid_spacing()
+        tick = self.svg.viewport_to_unit(TICK) / scale
+        gap = self.svg.viewport_to_unit(GAP) / scale
+        font = self.svg.viewport_to_unit(FONT) / scale
+        ux, uy = (ex - sx) / length, (ey - sy) / length
+        nx, ny = -uy, ux
+        zero = (zx - sx) * ux + (zy - sy) * uy
+        horizontal = abs(ux) >= abs(uy)
+
+        node.path = f"M {sx:.4f},{sy:.4f} L {ex:.4f},{ey:.4f}"
+        node.set("sodipodi:nodetypes", None)
+
+        group = Group()
+        node.getparent().insert(node.getparent().index(node), group)
+        group.append(node)
+
+        ticks = []
+        labels = []
+        # Positive values go right on a horizontal axis and up on a vertical
+        # one, whichever end was drawn first.
+        sign = (1 if ux > 0 else -1) if horizontal else (1 if uy < 0 else -1)
+        eps = 1e-6 * length
+        below = math.floor(-zero / spacing - 1e-9)
+        above = math.ceil((length - zero) / spacing + 1e-9)
+        for step in range(below, above + 1):
+            along = zero + step * spacing
+            if step == 0 or along < -eps or along > length + eps:
+                continue
+            value = step * sign
+            px, py = sx + ux * along, sy + uy * along
+            ticks.append(
+                f"M {px + nx * tick:.4f},{py + ny * tick:.4f} "
+                f"L {px - nx * tick:.4f},{py - ny * tick:.4f}"
+            )
+            if not LABELS:
+                continue
+            if horizontal:
+                labels.append((px, py + tick + gap + font * 0.75, "middle", value))
+            else:
+                labels.append((px - tick - gap, py + font * 0.35, "end", value))
+
+        if ticks:
+            marks = PathElement()
+            marks.path = " ".join(ticks)
+            marks.style = {
+                "fill": "none",
+                "stroke": node.style.get("stroke", "#000000"),
+                "stroke-width": node.style.get("stroke-width", "0.5"),
+            }
+            group.append(marks)
+        for x, y, anchor, value in labels:
+            text = TextElement(x=f"{x:.4f}", y=f"{y:.4f}")
+            text.text = f"${value}$"
+            text.style = {
+                "font-size": f"{font:.4f}",
+                "font-family": "monospace",
+                "fill": "#000000",
+                "stroke": "none",
+                "text-anchor": anchor,
+                "text-align": "center" if anchor == "middle" else "end",
+            }
+            group.append(text)
+
+
+if __name__ == "__main__":
+    Axis().run()
+#+end_src
+
+#+begin_src xml :tangle "../../../inkscape/.config/inkscape/extensions/tony_axis.inx" :mkdirp yes
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+  <name>Axis from line</name>
+  <id>org.tony.axis</id>
+  <effect needs-live-preview="false">
+    <object-type>path</object-type>
+    <effects-menu>
+      <submenu name="Tony"/>
+    </effects-menu>
+  </effect>
+  <script>
+    <command location="inx" interpreter="python">tony_axis.py</command>
+  </script>
+</inkscape-extension>
+#+end_src
+
+*** parabolas: =y= in Inkscape
+=Extensions > Tony > Parabola from line= replaces a pen line with an exact parabola that opens up or down. With two clicks, the first is the vertex and the second a point on one arm; the parabola is drawn symmetrically, as wide on both sides. With three or more clicks, it passes through the first, second and last click, for example two roots and the vertex, and spans from the leftmost to the rightmost of them. No two of the three clicks may be straight above one another; if they are, nothing changes. With snapping on (=x=) the clicks land on grid points, so a parabola through given points comes out exact. The line's colour and width are kept and arrowheads removed.
+
+A parabola segment is exactly one quadratic Bezier curve, so the result is a single smooth segment that Inkscape's node tool can still edit.
+#+begin_src python :tangle "../../../inkscape/.config/inkscape/extensions/tony_parabola.py" :mkdirp yes
+#!/usr/bin/env python3
+import inkex
+from inkex import PathElement
+
+
+class Parabola(inkex.EffectExtension):
+    def effect(self):
+        for node in self.svg.selection.filter(PathElement).values():
+            self.parabola(node)
+
+    def parabola(self, node):
+        points = [tuple(p) for p in node.path.end_points]
+        if len(points) < 2:
+            return
+        if len(points) == 2:
+            (hx, hy), (px, py) = points
+            if px == hx:
+                return
+            a = (py - hy) / (px - hx) ** 2
+            b, c = -2 * a * hx, a * hx * hx + hy
+            x0, x1 = hx - abs(px - hx), hx + abs(px - hx)
+        else:
+            (ax, ay), (bx, by), (cx, cy) = points[0], points[1], points[-1]
+            if len({ax, bx, cx}) < 3:
+                return
+            # Lagrange form of the quadratic through the three points.
+            la = ay / ((ax - bx) * (ax - cx))
+            lb = by / ((bx - ax) * (bx - cx))
+            lc = cy / ((cx - ax) * (cx - bx))
+            a = la + lb + lc
+            b = -(la * (bx + cx) + lb * (ax + cx) + lc * (ax + bx))
+            c = la * bx * cx + lb * ax * cx + lc * ax * bx
+            x0, x1 = min(ax, bx, cx), max(ax, bx, cx)
+
+        def f(x):
+            return a * x * x + b * x + c
+
+        # A parabola segment is exactly a quadratic Bezier: the control point
+        # is where the tangents at the two ends meet.
+        xm = (x0 + x1) / 2
+        ym = f(x0) + (2 * a * x0 + b) * (xm - x0)
+        node.path = f"M {x0:.4f},{f(x0):.4f} Q {xm:.4f},{ym:.4f} {x1:.4f},{f(x1):.4f}"
+        node.set("sodipodi:nodetypes", None)
+        for key in ("marker-start", "marker-mid", "marker-end"):
+            node.style[key] = "none"
+        node.style["fill"] = "none"
+
+
+if __name__ == "__main__":
+    Parabola().run()
+#+end_src
+
+#+begin_src xml :tangle "../../../inkscape/.config/inkscape/extensions/tony_parabola.inx" :mkdirp yes
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+  <name>Parabola from line</name>
+  <id>org.tony.parabola</id>
+  <effect needs-live-preview="false">
+    <object-type>path</object-type>
+    <effects-menu>
+      <submenu name="Tony"/>
+    </effects-menu>
+  </effect>
+  <script>
+    <command location="inx" interpreter="python">tony_parabola.py</command>
+  </script>
+</inkscape-extension>
+#+end_src
+
 *** PDF export
 Org's LaTeX exporter turns a link to an SVG into =\includesvg=, from the LaTeX =svg= package. That package does at export time what the watcher does on save: it runs Inkscape to split the figure into PDF and text, and LaTeX typesets the text in the document's own font. It needs the package loaded and LaTeX allowed to run programs (=-shell-escape=).
 
@@ -2106,6 +2510,8 @@ The shortcut manager dates from 2020 and Inkscape 0.92, and the clone is unpatch
 | =Shift+t= (text rendered to paths)             | works, =\RR= included                           |
 | =Shift+s= save style (rofi prompt)             | works                                           |
 | =s= apply saved style, =Shift+a=, =a=          | not confirmed: the test keys went to another window |
+
+The clone carries one local patch. =t= pastes the typed text inside an SVG snippet without escaping it, so =<= starts a bogus XML tag and Inkscape drops it: =$a < 0$= arrives as =$a  0$=. In =vim.py=, import =escape= from =html= and wrap the text in it (=>{escape(latex)}</tspan>=). Reapply after a fresh clone or a =git pull= that touches =vim.py=. =Shift+t= is unaffected; it hands the text to LaTeX directly.
 
 Things to know:
 - A saved style or object is applied the moment the letters typed after =s= or =a= match exactly one name. With one style called =glass=, =s g= is enough, and typing the rest of the word runs those letters as normal keys.
@@ -3909,6 +4315,7 @@ Run ~M-x copilot-login~ once to authenticate with your GitHub account.
   ;; indents with `c-basic-offset'.
   (add-to-list 'copilot-indentation-alist
                '(gdshader-mode c-basic-offset))
+  (add-to-list 'copilot-indentation-alist '(org-mode 2))
   ;; Show a nerd-icons Copilot indicator in the mode-line
   (with-eval-after-load 'nerd-icons
     (defun tony/copilot-mode-line-indicator ()
