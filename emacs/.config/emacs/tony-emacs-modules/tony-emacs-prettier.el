@@ -27,6 +27,22 @@
  (setf (alist-get 'web-mode apheleia-mode-alist) 'prettierd)
  (setf (alist-get 'ngxhtml-ts-mode apheleia-mode-alist) 'prettierd)
  (setf (alist-get 'emacs-lisp-mode apheleia-mode-alist)
-       'elisp-autofmt))
+       'elisp-autofmt)
+
+ ;; prettierd falls back to Prettier defaults when a project has no Prettier
+ ;; config, which rewrites an unformatted codebase on every save.
+ (defun tony/prettier-config-missing-p ()
+   "Non-nil when the buffer is a JS/TS/CSS file in a project with no Prettier config."
+   (and (memq major-mode '(typescript-ts-mode tsx-ts-mode js-ts-mode css-ts-mode json-ts-mode))
+        (not (locate-dominating-file
+              default-directory
+              (lambda (dir)
+                (or (directory-files dir nil "\\`\\(\\.prettierrc\\|prettier\\.config\\.\\)" t 1)
+                    (let ((pkg (expand-file-name "package.json" dir)))
+                      (and (file-exists-p pkg)
+                           (with-temp-buffer
+                             (insert-file-contents pkg)
+                             (re-search-forward "\"prettier\"" nil t))))))))))
+ (add-to-list 'apheleia-inhibit-functions #'tony/prettier-config-missing-p))
 
 (provide 'tony-emacs-prettier)

@@ -192,6 +192,7 @@ Note: for H-s you must release <menu> before pressing `s'."
 (require 'tony-emacs-languages)
 (require 'tony-emacs-lsp-mode)
 (require 'tony-emacs-ngx)
+(require 'tony-emacs-react)
 (require 'tony-emacs-lsp-biome)
 (require 'tony-emacs-info-manuals)
 (require 'tony-emacs-copilot)

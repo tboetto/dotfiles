@@ -9,7 +9,7 @@
  :hook
  ((lsp-mode . lsp-diagnostics-mode)
   (lsp-mode . lsp-enable-which-key-integration)
-  ((html-ts-mode typescript-ts-mode go-ts-mode js-ts-mode)
+  ((html-ts-mode typescript-ts-mode tsx-ts-mode go-ts-mode js-ts-mode)
    .
    lsp-deferred))
  :custom

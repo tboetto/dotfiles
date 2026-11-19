@@ -9,11 +9,20 @@
         <string>/opt/homebrew/bin/emacs</string>
         <string>--fg-daemon</string>
     </array>
-    <key>StandardErrorPath</key>
-      <string>/tmp/com.user.emacs-daemon.err</string>
-    <key>StandardOutPath</key>
-      <string>/tmp/com.user.emacs-daemon.out</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
     <key>RunAtLoad</key>
     <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/com.user.emacs-daemon.err</string>
+    <key>StandardOutPath</key>
+    <string>/tmp/com.user.emacs-daemon.out</string>
 </dict>
 </plist>

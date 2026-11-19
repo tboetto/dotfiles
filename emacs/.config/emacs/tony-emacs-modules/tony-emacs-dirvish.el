@@ -1,7 +1,4 @@
 ;;; tony-emacs-dirvish.el --- dirvish: a better dired  -*- lexical-binding: t; -*-
-(when (and (eq system-type 'darwin) (executable-find "gls"))
-  (setq insert-directory-program "gls"))
-
 (use-package dirvish
   :ensure t
   :init (dirvish-override-dired-mode)
@@ -37,6 +34,8 @@
   (dired-listing-switches
    "-l --almost-all --human-readable --group-directories-first --no-group")
   :config
+  (when (and (eq system-type 'darwin) (executable-find "gls"))
+    (setq insert-directory-program "gls"))
   (dirvish-peek-mode)
   (dirvish-side-follow-mode))
 

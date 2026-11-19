@@ -14,7 +14,9 @@
    (add-to-list 'org-src-lang-modes '("typescript" . typescript-ts))
    )
 
-(add-to-list 'warning-suppress-types '(defvaralias))
+(require 'warnings)
+(add-to-list 'warning-suppress-log-types
+             '(defvaralias losing-value org-format-latex-header))
 
 (use-package
   org-agenda

@@ -432,6 +432,7 @@ config
   (require 'tony-emacs-languages)
   (require 'tony-emacs-lsp-mode)
   (require 'tony-emacs-ngx)
+  (require 'tony-emacs-react)
   (require 'tony-emacs-lsp-biome)
   (require 'tony-emacs-info-manuals)
   (require 'tony-emacs-copilot)
@@ -726,7 +727,7 @@ config
 
 * Modules
 ** ~miscellaneous.el~
-Also import NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-ls) trust the corporate CA bundle (~/.certs/ca-bundle.pem)
+Also import NODE_USE_SYSTEM_CA (set in the shell profile on macOS) and NODE_EXTRA_CA_CERTS so Node-based servers (Copilot, ts-ls, angular-ls) trust the corporate CA certificates. Without them Copilot fails with "unable to get local issuer certificate".
 
 A daemon has no window system while it loads, so it is listed explicitly. The macOS daemon is started by launchd with a minimal environment and needs the shell's =PATH=.
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-miscellaneous.el" :mkdirp yes
@@ -736,7 +737,8 @@ A daemon has no window system while it loads, so it is listed explicitly. The ma
  :ensure t
  :config
  (when (or (daemonp) (memq window-system '(mac ns x)))
-   (add-to-list 'exec-path-from-shell-variables "NODE_EXTRA_CA_CERTS")
+   (dolist (var '("NODE_USE_SYSTEM_CA" "NODE_EXTRA_CA_CERTS"))
+     (add-to-list 'exec-path-from-shell-variables var))
    (exec-path-from-shell-initialize)))
 #+end_src
 
@@ -1145,9 +1147,11 @@ Setup org mode basics:
 #+end_src
 
 *** silence the org-format-latex-header alias warning
-The Org development branch aliases =org-format-latex-header= to =org-latex-preview-preamble= after giving it a value, so Emacs reports a =defvaralias= warning whenever =org-compat= loads. Suppressing the type hides the popup only; the warning is still logged in =*Warnings*=.
+The Org development branch aliases =org-format-latex-header= to =org-latex-preview-preamble= after giving it a value, so Emacs reports a =defvaralias= warning whenever =org-compat= loads. It goes in =warning-suppress-log-types= because =display-warning= ignores =warning-suppress-types= while a daemon is starting and shows the warning on the first client frame. Only this variable's alias warning is dropped; other =defvaralias= warnings still appear.
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
-(add-to-list 'warning-suppress-types '(defvaralias))
+(require 'warnings)
+(add-to-list 'warning-suppress-log-types
+             '(defvaralias losing-value org-format-latex-header))
 #+end_src
 
 *** org agenda set up
@@ -3619,7 +3623,7 @@ Dirvish works without any external tools, but each tool below unlocks one featur
 | =mediainfo=     | audio and video metadata                       |
 | =tar=, =unzip=  | archive preview (already on both systems)      |
 
-On macOS the system =ls= is BSD and does not accept the GNU flags Dired uses, so the config switches =insert-directory-program= to =gls= when it is installed:
+On macOS the system =ls= is BSD and does not accept the GNU flags Dired uses, so the config switches =insert-directory-program= to =gls= when it is installed. The check lives in =:config= because =gls= is only on =exec-path= once =exec-path-from-shell= has run; Elpaca defers that until =after-init=, and an Emacs launched from the Dock starts with a =PATH= that does not include =/opt/homebrew/bin=. If the check runs too early Dired falls back to BSD =ls=, every listing fails, and Dirvish reports =wrong-type-argument stringp nil=:
 
 #+begin_src sh
 brew install coreutils fd poppler ffmpegthumbnailer mediainfo imagemagick
@@ -3633,9 +3637,6 @@ sudo pacman -S fd poppler ffmpegthumbnailer mediainfo imagemagick
 
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-dirvish.el" :mkdirp yes
 ;;; tony-emacs-dirvish.el --- dirvish: a better dired  -*- lexical-binding: t; -*-
-(when (and (eq system-type 'darwin) (executable-find "gls"))
-  (setq insert-directory-program "gls"))
-
 (use-package dirvish
   :ensure t
   :init (dirvish-override-dired-mode)
@@ -3671,6 +3672,8 @@ sudo pacman -S fd poppler ffmpegthumbnailer mediainfo imagemagick
   (dired-listing-switches
    "-l --almost-all --human-readable --group-directories-first --no-group")
   :config
+  (when (and (eq system-type 'darwin) (executable-find "gls"))
+    (setq insert-directory-program "gls"))
   (dirvish-peek-mode)
   (dirvish-side-follow-mode))
 #+end_src
@@ -3863,6 +3866,8 @@ grammar on demand the first time a ts-mode needs it.
             (prisma "https://github.com/victorhqc/tree-sitter-prisma")
             (python "https://github.com/tree-sitter/tree-sitter-python")
             (toml "https://github.com/tree-sitter/tree-sitter-toml" "v0.5.1")
+            (tsx "https://github.com/tree-sitter/tree-sitter-typescript" nil "tsx/src")
+            (typescript "https://github.com/tree-sitter/tree-sitter-typescript" nil "typescript/src")
             (yaml "https://github.com/ikatyang/tree-sitter-yaml")))
    (add-to-list 'treesit-language-source-alist grammar)))
 #+end_src
@@ -4018,7 +4023,23 @@ is not repeated here.
  (setf (alist-get 'web-mode apheleia-mode-alist) 'prettierd)
  (setf (alist-get 'ngxhtml-ts-mode apheleia-mode-alist) 'prettierd)
  (setf (alist-get 'emacs-lisp-mode apheleia-mode-alist)
-       'elisp-autofmt))
+       'elisp-autofmt)
+
+ ;; prettierd falls back to Prettier defaults when a project has no Prettier
+ ;; config, which rewrites an unformatted codebase on every save.
+ (defun tony/prettier-config-missing-p ()
+   "Non-nil when the buffer is a JS/TS/CSS file in a project with no Prettier config."
+   (and (memq major-mode '(typescript-ts-mode tsx-ts-mode js-ts-mode css-ts-mode json-ts-mode))
+        (not (locate-dominating-file
+              default-directory
+              (lambda (dir)
+                (or (directory-files dir nil "\\`\\(\\.prettierrc\\|prettier\\.config\\.\\)" t 1)
+                    (let ((pkg (expand-file-name "package.json" dir)))
+                      (and (file-exists-p pkg)
+                           (with-temp-buffer
+                             (insert-file-contents pkg)
+                             (re-search-forward "\"prettier\"" nil t))))))))))
+ (add-to-list 'apheleia-inhibit-functions #'tony/prettier-config-missing-p))
 
 (provide 'tony-emacs-prettier)
 #+end_src
@@ -4093,7 +4114,7 @@ is not repeated here.
  :hook
  ((lsp-mode . lsp-diagnostics-mode)
   (lsp-mode . lsp-enable-which-key-integration)
-  ((html-ts-mode typescript-ts-mode go-ts-mode js-ts-mode)
+  ((html-ts-mode typescript-ts-mode tsx-ts-mode go-ts-mode js-ts-mode)
    .
    lsp-deferred))
  :custom
@@ -4281,6 +4302,34 @@ Falls back to npm's global node_modules."
 
 (provide 'tony-emacs-ngx)
 ;;; tony-emacs-ngx.el ends here
+#+end_src
+
+** ~react.el~
+Support for the Next.js / React 19 / MUI dashboard. =tsx-ts-mode= buffers get
+=lsp-deferred= from the =lsp-mode= block (typescript-language-server, with
+JSX auto-closing tags). This module adds the ESLint language server on top, which
+reads the repo's ESLint 9 flat config (=eslint.config.mjs=) and so reports the
+=eslint-config-next= rules, including the React hooks rules, as diagnostics.
+
+The ESLint server is vscode-eslint, downloaded by lsp-mode on first use; accept
+the download prompt once. The TypeScript server only resolves React and MUI types
+once =npm install= has populated =node_modules=.
+
+The repo is not Prettier-formatted, so Apheleia is skipped there (see the
+=prettier.el= block); use =C-c l a= for ESLint fixes.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-react.el" :mkdirp yes
+;;; tony-emacs-react.el --- ESLint LSP for the React/Next.js project  -*- lexical-binding: t; -*-
+
+(use-package
+ lsp-eslint
+ :ensure nil ; ships with lsp-mode
+ :after lsp-mode
+ :custom
+ (lsp-eslint-enable t)
+ (lsp-eslint-run "onType")
+ (lsp-eslint-package-manager "npm"))
+
+(provide 'tony-emacs-react)
 #+end_src
 
 ** ~info-manuals.el~
@@ -4535,7 +4584,189 @@ Keybinds extend the existing =C-c a= prefix:
 ;;; tony-emacs-mermaid.el --- Mermaid diagram mode  -*- lexical-binding: t; -*-
   (use-package mermaid-mode
     :ensure (:host github :repo "abrochard/mermaid-mode")
-    :defer t)
+    :after org)
+#+end_src
+
+*** render mermaid blocks in org
+=mermaid-mode= also defines the Babel executor for mermaid source blocks, which calls the =mmdc= CLI and writes an SVG; it loads with Org so the executor exists before any block has been edited. Do not also install =ob-mermaid=: it defines the same function, and whichever package loads last silently replaces the other. =C-c C-c= renders the block and previews the image under it; =C-c '= edits it in =mermaid-mode=. A named block needs no =:file=: the SVG is called after the =#+name= and goes in the note's Inkscape figure directory (=figures/<denote id>/=, see =inkscape.el=), so drawn figures and diagrams sit together. An unnamed block needs an explicit =:file=, which is still placed in that directory.
+
+#+begin_src org
+,#+name: login-flow
+,#+begin_src mermaid
+graph TD
+  A[Login] --> B{Valid?}
+  B -->|yes| C[Home]
+  B -->|no| A
+,#+end_src
+#+end_src
+
+The diagram theme is chosen when the block runs: =dark= under a dark Emacs theme, =default= under a light one, on a transparent background. A diagram keeps the colours it was rendered with, so after switching themes re-run it with =C-c C-c=, or the whole buffer with =org-babel-execute-buffer=.
+
+Emacs draws SVG with librsvg, which skips the HTML labels Mermaid uses by default, so flowchart nodes would render as empty boxes. =my/mermaid-config= turns HTML labels off so every label is plain SVG text, and turns off =useMaxWidth= so each SVG carries its real width instead of =100%=. It is written to a JSON file in the temp directory when =mermaid-mode= loads and passed to every =mmdc= run through =mermaid-flags=. Diagrams rendered before this need a re-run.
+
+Org limits a previewed image to =fill-column= by default, which shrinks a wide diagram to unreadable text, and =visual-fill-column-width= does not change it. =org-image-max-width= is set to the window width instead. Org measures whichever window is selected when it draws a preview, so previews are drawn in a window showing the buffer; otherwise a preview drawn from another frame overflows and is cut off.
+
+librsvg also drops the space at the start of each word's =tspan=, so multi-word labels run together. After each render the SVG's root element gets =xml:space="preserve"=, which keeps them.
+
+| Requirement     | Purpose                                     |
+|-----------------+---------------------------------------------|
+| =mmdc=          | renders a diagram to SVG                    |
+| =node=          | runs =mmdc=                                 |
+| Chrome/Chromium | =mmdc= renders through headless Puppeteer   |
+
+Puppeteer looks for its own downloaded browser, which neither package below provides on macOS, so =PUPPETEER_EXECUTABLE_PATH= is pointed at the installed Google Chrome or Chromium unless it is already set. On macOS:
+
+#+begin_src sh
+brew install mermaid-cli
+brew install --cask google-chrome
+#+end_src
+
+On Arch Linux the package pulls in =chromium= and =nodejs=:
+
+#+begin_src sh
+sudo pacman -S mermaid-cli
+#+end_src
+
+On Artix, if =pacman -Si mermaid-cli= finds nothing, enable the Arch =[extra]= repository with =artix-archlinux-support=, or install from npm against the system Chromium:
+
+#+begin_src sh
+sudo pacman -S nodejs npm chromium
+sudo PUPPETEER_SKIP_DOWNLOAD=1 npm install -g @mermaid-js/mermaid-cli
+#+end_src
+
+Check from a shell with the same browser path, e.g. on macOS:
+
+#+begin_src sh
+printf 'graph TD\n  A-->B\n' > /tmp/m.mmd
+PUPPETEER_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  mmdc -i /tmp/m.mmd -o /tmp/m.svg
+#+end_src
+
+It should print =Generating single mermaid chart= and write =/tmp/m.svg=. Without the variable it fails with =Could not find chrome-headless-shell=.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-mermaid.el" :mkdirp yes
+(defvar mermaid-flags) ; mermaid-mode
+(declare-function my/inkscape--figure-dir "tony-emacs-inkscape")
+(declare-function org-babel-get-src-block-info "ob-core")
+(declare-function org-babel-where-is-src-block-result "ob-core")
+(declare-function org-babel-result-end "ob-core")
+(declare-function org-link-preview-region "ol")
+
+(defconst my/mermaid-browsers
+  '("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    "/usr/bin/chromium")
+  "Browsers Puppeteer may render mermaid diagrams with, first found wins.")
+
+(unless (getenv "PUPPETEER_EXECUTABLE_PATH")
+  (when-let* ((browser (seq-find #'file-executable-p my/mermaid-browsers)))
+    (setenv "PUPPETEER_EXECUTABLE_PATH" browser)))
+
+(defun my/mermaid-output-dir ()
+  "Figure directory of the current note, or nil to write beside it."
+  (when (fboundp 'my/inkscape--figure-dir)
+    (ignore-errors (file-relative-name (my/inkscape--figure-dir)))))
+
+(defconst my/mermaid-config
+  '((htmlLabels . :false)
+    (flowchart . ((htmlLabels . :false) (useMaxWidth . :false)))
+    (sequence . ((useMaxWidth . :false))))
+  "Mermaid configuration passed to every mmdc run.")
+
+(defun my/mermaid-write-config ()
+  "Write `my/mermaid-config' to a temporary JSON file and return its path."
+  (let ((file (expand-file-name "mermaid-config.json"
+                                temporary-file-directory)))
+    (with-temp-file file
+      (insert (json-serialize my/mermaid-config)))
+    file))
+
+(defun my/mermaid-theme ()
+  "Mermaid theme matching the current Emacs background."
+  (if (eq (frame-parameter nil 'background-mode) 'dark) "dark" "default"))
+
+(defun my/mermaid-preserve-spaces (file)
+  "Mark SVG FILE so librsvg keeps the spaces between label words."
+  (with-temp-file file
+    (insert-file-contents file)
+    (when (and (re-search-forward "<svg " nil t)
+               (not (looking-at-p "xml:space")))
+      (insert "xml:space=\"preserve\" "))))
+
+(defun my/mermaid-preview-result ()
+  "Fix up and preview the image result of the mermaid block at point."
+  (when (equal (car (org-babel-get-src-block-info 'no-eval)) "mermaid")
+    (when-let* ((beg (org-babel-where-is-src-block-result)))
+      (save-excursion
+        (goto-char beg)
+        (forward-line)
+        (let ((link (org-element-context)))
+          (when (org-element-type-p link 'link)
+            (let ((file (expand-file-name (org-element-property :path link))))
+              (when (file-exists-p file)
+                (my/mermaid-preserve-spaces file)))))
+        (org-link-preview-region nil t beg (org-babel-result-end))))))
+
+(defun my/org-link-preview-in-displayed-window (fn &rest args)
+  "Call FN with ARGS in a window showing the current buffer, if any."
+  (let ((window (get-buffer-window nil t)))
+    (if (and window (not (eq window (selected-window))))
+        (with-selected-window window (apply fn args))
+      (apply fn args))))
+
+(with-eval-after-load 'mermaid-mode
+  (add-to-list 'org-babel-load-languages '(mermaid . t))
+  (setq org-babel-default-header-args:mermaid
+        '((:results . "file")
+          (:exports . "results")
+          (:file-ext . "svg")
+          (:output-dir . my/mermaid-output-dir)
+          (:theme . my/mermaid-theme)
+          (:background-color . "transparent")))
+  (setq mermaid-flags
+        (concat "-c " (shell-quote-argument (my/mermaid-write-config))))
+  (setq org-image-max-width 'window)
+  (advice-add 'org-link-preview-region :around
+              #'my/org-link-preview-in-displayed-window)
+  (add-hook 'org-babel-after-execute-hook #'my/mermaid-preview-result))
+#+end_src
+
+*** view a diagram at full size
+An inline preview cannot be scrolled or panned, so a wide diagram is shown scaled to the window. =C-c C-o= on its result link opens the SVG in =image-mode=. Figures and diagrams under a note's =figures/= directory open at their original size instead of being scaled down to the window, and dragging with the left mouse button pans them; arrow keys and a trackpad swipe also scroll, =i += and =i -= zoom, and =s w= fits the width.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-mermaid.el" :mkdirp yes
+(declare-function image-display-size "image.c")
+(declare-function image-get-display-property "image-mode")
+(declare-function image-set-window-hscroll "image-mode")
+(declare-function image-set-window-vscroll "image-mode")
+(declare-function image-transform-original "image-mode")
+
+(defun my/image-drag-pan (event)
+  "Pan the image in the window of EVENT by dragging the mouse."
+  (interactive "e")
+  (with-selected-window (posn-window (event-start event))
+    (let* ((size (image-display-size (image-get-display-property) t))
+           (char (frame-char-width))
+           (max-x (max 0 (- (car size) (window-body-width nil t))))
+           (max-y (max 0 (- (cdr size) (window-body-height nil t))))
+           (start (cdr (mouse-pixel-position)))
+           (x0 (* (window-hscroll) char))
+           (y0 (window-vscroll nil t)))
+      (track-mouse
+        (while (mouse-movement-p (read-event))
+          (let ((pos (cdr (mouse-pixel-position))))
+            (when (car pos)
+              (image-set-window-hscroll
+               (/ (min max-x (max 0 (- x0 (- (car pos) (car start))))) char))
+              (image-set-window-vscroll
+               (min max-y (max 0 (- y0 (- (cdr pos) (cdr start)))))))))))))
+
+(defun my/image-original-size-for-figures ()
+  "Show an SVG from a note's figure directory at its original size."
+  (when (and buffer-file-name
+             (string-match-p "/figures/[^/]+/[^/]+\\.svg\\'" buffer-file-name))
+    (image-transform-original)))
+
+(with-eval-after-load 'image-mode
+  (keymap-set image-mode-map "<down-mouse-1>" #'my/image-drag-pan)
+  (add-hook 'image-mode-hook #'my/image-original-size-for-figures))
 #+end_src
 
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-mermaid.el" :mkdirp yes

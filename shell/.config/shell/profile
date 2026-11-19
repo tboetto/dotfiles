@@ -1,5 +1,4 @@
 #!/bin/zsh
-eval "$(fnm env --use-on-cd --shell zsh)"
 
 # ~/ Clean-up
 export XDG_CONFIG_HOME="$HOME/.config"
@@ -12,6 +11,7 @@ case "$(uname -s)" in
 	Darwin)
 		eval "$(/opt/homebrew/bin/brew shellenv zsh)"
 		export PATH="$PATH:${HOME}/Library/npm"
+		export NODE_USE_SYSTEM_CA=1
 		;;
 	Linux)
 		export GOPATH="$HOME/.local/src/go"
@@ -29,3 +29,6 @@ case "$(uname -s)" in
 		[ ! -f ${XDG_CONFIG_HOME:-$HOME/.config}/shell/shortcutrc ] && setsid shortcuts >/dev/null 2>&1
 		;;
 esac
+
+# After brew shellenv, so fnm's node shadows any Homebrew node.
+eval "$(fnm env --use-on-cd --shell zsh)"

@@ -4,7 +4,8 @@
  :ensure t
  :config
  (when (or (daemonp) (memq window-system '(mac ns x)))
-   (add-to-list 'exec-path-from-shell-variables "NODE_EXTRA_CA_CERTS")
+   (dolist (var '("NODE_USE_SYSTEM_CA" "NODE_EXTRA_CA_CERTS"))
+     (add-to-list 'exec-path-from-shell-variables var))
    (exec-path-from-shell-initialize)))
 
 (electric-pair-mode 1)
