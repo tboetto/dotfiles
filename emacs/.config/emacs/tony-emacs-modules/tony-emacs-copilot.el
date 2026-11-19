@@ -1,15 +1,34 @@
 ;;; tony-emacs-copilot.el --- GitHub Copilot inline completion  -*- lexical-binding: t; -*-
+(declare-function copilot--start-server "copilot")
+
+(when (daemonp)
+  (run-with-idle-timer
+   2 nil
+   (lambda ()
+     (with-demoted-errors "Copilot prestart: %S"
+       (require 'copilot)
+       (copilot--start-server)))))
+
+(defun tony/copilot-enable-when-idle ()
+  "Turn on `copilot-mode' and `copilot-nes-mode' here once Emacs is idle."
+  (unless (derived-mode-p 'lisp-interaction-mode)
+    (let ((buffer (current-buffer)))
+      (run-with-idle-timer
+       1 nil
+       (lambda ()
+         (when (buffer-live-p buffer)
+           (with-current-buffer buffer
+             (copilot-mode 1)
+             (copilot-nes-mode 1))))))))
+
 ;; copilot requires track-changes >= 1.4
 (use-package track-changes
-  :ensure (:host github :repo "emacs-straight/track-changes" :type git))
+  :ensure (:host github :repo "emacs-straight/track-changes" :type git)
+  :defer t)
 
 (use-package copilot
   :ensure (:host github :repo "copilot-emacs/copilot.el")
-  :after track-changes
-  :hook ((prog-mode . copilot-mode)
-         (prog-mode . copilot-nes-mode)
-         (ngxhtml-ts-mode . copilot-mode)
-         (ngxhtml-ts-mode . copilot-nes-mode))
+  :hook ((prog-mode ngxhtml-ts-mode) . tony/copilot-enable-when-idle)
   :bind
   (:map copilot-completion-map
         ("<tab>"   . copilot-accept-completion)

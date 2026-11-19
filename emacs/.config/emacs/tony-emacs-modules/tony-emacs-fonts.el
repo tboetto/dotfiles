@@ -99,7 +99,7 @@
 (use-package
  show-font
  :ensure (:host github :repo "protesilaos/show-font")
- :if (display-graphic-p)
+ :if (or (daemonp) (display-graphic-p))
  :commands (show-font-select-preview show-font-list show-font-tabulated)
  :config
  ;; These are the defaults, but I keep them here for easier access.

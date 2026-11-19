@@ -23,6 +23,8 @@ alias \
 alias \
 	g="git" \
 	v="nvim" \
+	e="emacsclient -c -n -a ''" \
+	et="emacsclient -t -a ''" \
 	trem="transmission-remote 10.200.200.2:9091" \
 	tmux="tmux -f ~/.tmux.conf" \
 	ts="tmux new-session -s" \

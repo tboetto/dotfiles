@@ -26,7 +26,7 @@
 
 (use-package
  racket-mode
- :after org
+ :defer t
  :ensure t
  :config (add-to-list 'org-babel-load-languages '(racket . t)))
 

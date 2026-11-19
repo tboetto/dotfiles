@@ -8,9 +8,9 @@
       (add-to-list 'exec-path fnm-bin)
       (setenv "PATH" (concat fnm-bin path-separator (getenv "PATH")))))
 
-  (use-package shell-maker :ensure t)
+  (use-package shell-maker :ensure t :defer t)
 
-  (use-package acp :ensure t :after shell-maker)
+  (use-package acp :ensure t :defer t)
 
 ;; agent-shell draws its header SVG at the frame's own font metrics --
 ;; `frame-char-height', plus the default face's family and size -- so it
@@ -33,7 +33,6 @@
 
 (use-package agent-shell
   :ensure (:host github :repo "xenodium/agent-shell")
-  :after (shell-maker acp)
   :bind
   (("C-c a a" . agent-shell)
    ("C-c a c" . agent-shell-anthropic-start-claude-code)

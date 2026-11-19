@@ -49,11 +49,12 @@
 
 ;; GNU ELPA transitive dependencies (moved off MELPA, needed by lsp-mode).
 ;; Declared early so elpaca has their recipes before processing the queue.
-(use-package spinner :ensure (:host github :repo "Malabarba/spinner.el"))
+(use-package spinner :ensure (:host github :repo "Malabarba/spinner.el") :defer t)
 (use-package compat :ensure (:host github :repo "emacs-compat/compat"))
 
 (use-package org
-  :ensure (org :host github :repo "bzg/org-mode" :branch "main"))
+  :ensure (org :host github :repo "bzg/org-mode" :branch "main")
+  :defer t)
 (elpaca-wait)
 
 (when (locate-file "org-latex-preview"
@@ -65,9 +66,6 @@
            emacs-version)))
 
 (setq ring-bell-function #'ignore)
-(setq inhibit-startup-message t)
-(menu-bar-mode -1)
-(scroll-bar-mode -1) ; `tool-bar-mode' is already off in early-init.el
 
 (repeat-mode 1)
 
@@ -87,7 +85,9 @@
 ;; whichever buffer happened to be current during init. Use the global mode.
 (global-hl-line-mode 1)
 
+(setq recentf-auto-cleanup 'never)
 (recentf-mode 1)
+(run-with-idle-timer 30 nil #'recentf-cleanup)
 (setq history-length 25)
 (savehist-mode 1)
 (save-place-mode 1)
@@ -126,8 +126,15 @@ Note: for H-s you must release <menu> before pressing `s'."
 
 ;; Only meaningful under X -- there is no <menu> key event to translate in a
 ;; terminal frame, and macOS has its own modifier handling.
+(defun tony/enable-hyper-in-x-frame (frame)
+  "Install the <menu> hyper translation on FRAME's terminal if it is X."
+  (when (eq (window-system frame) 'x)
+    (with-selected-frame frame
+      (enable-hyper-super-modifiers-linux-x))))
+
 (when (eq window-system 'x)
   (enable-hyper-super-modifiers-linux-x))
+(add-hook 'after-make-frame-functions #'tony/enable-hyper-in-x-frame)
 
 ;; Vertico settings
 ;; Add prompt indicator to `completing-read-multiple'.
@@ -143,7 +150,7 @@ Note: for H-s you must release <menu> before pressing `s'."
 (advice-add #'completing-read-multiple :filter-args #'crm-indicator)
 
 (require 'server)
-(unless (server-running-p)
+(unless (or (daemonp) (server-running-p))
   (server-start))
 
 (mapc

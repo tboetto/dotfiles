@@ -1,7 +1,7 @@
 ;;; tony-emacs-lsp-biome.el --- Biome language server  -*- lexical-binding: t; -*-
 (use-package
  lsp-biome
- :after apheleia
+ :after lsp-mode
  :ensure (:host github :repo "cxa/lsp-biome"))
 
 (defun my/biome-organize-imports ()

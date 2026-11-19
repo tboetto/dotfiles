@@ -2,7 +2,7 @@
 (use-package
  nerd-icons
  :ensure t
- :if (display-graphic-p)
+ :if (or (daemonp) (display-graphic-p))
  :config (setq nerd-icons-font-family "Symbols Nerd Font"))
 
 (use-package

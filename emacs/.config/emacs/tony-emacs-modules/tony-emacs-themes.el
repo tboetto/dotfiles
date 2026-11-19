@@ -7,17 +7,21 @@
 (setq custom-safe-themes t)
 
 (use-package modus-themes
-  :ensure t)
+  :ensure t
+  :defer t)
 
 (use-package ef-themes
-  :ensure (:host github :repo "protesilaos/ef-themes"))
+  :ensure (:host github :repo "protesilaos/ef-themes")
+  :defer t)
 
 (use-package standard-themes
-:ensure (:host github :repo "protesilaos/standard-themes"))
+:ensure (:host github :repo "protesilaos/standard-themes")
+:defer t)
 
 (use-package
  doric-themes
  :ensure (:host github :repo "protesilaos/doric-themes")
+ :defer t
  :custom (doric-themes-toggle '(doric-light doric-obsidian)))
 
 (use-package
@@ -117,6 +121,7 @@ already existed before this fix was added, with no manual rebuild needed."
  naysayer-theme
  :ensure
  (:build (:before elpaca-build-link tony/add-lexbind-cookie))
+ :defer t
  :init
  (tony/ensure-lexbind-cookie "naysayer-theme")
  (defun my-naysayer-theme ()
@@ -127,6 +132,7 @@ already existed before this fix was added, with no manual rebuild needed."
 (use-package
  acme-theme
  :ensure t
+ :defer t
  :init (setq acme-theme-black-fg t)
 
  (defun my-acme-theme ()
@@ -137,6 +143,7 @@ already existed before this fix was added, with no manual rebuild needed."
 (use-package
  kaolin-themes
  :ensure t
+ :defer t
  :init
  (defun my-kaolin-dark ()
    "Clear previous theme and load kaolin dark."
@@ -177,9 +184,9 @@ already existed before this fix was added, with no manual rebuild needed."
 
 (use-package remember-last-theme
   :ensure nil ; local, in tony-lisp/
-  :after (acme-theme kaolin-themes naysayer-theme doom-themes doric-themes standard-themes ef-themes modus-themes)
+  :demand t
   :config
-  (remember-theme-load)
+  (add-hook 'elpaca-after-init-hook #'remember-theme-load)
   (add-hook 'kill-emacs-hook 'remember-theme-save)
   ;; Re-apply the theme in frames made later by emacsclient, otherwise the
   ;; menu bar keeps the theme the server started with. Hooked here rather

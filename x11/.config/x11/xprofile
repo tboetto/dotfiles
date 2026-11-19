@@ -35,3 +35,5 @@ autostart="xcompmgr dunst unclutter"
 for program in $autostart; do
 	pidof -s "$program" || "$program" &
 done >/dev/null 2>&1
+
+emacsclient -a false -e t >/dev/null 2>&1 || emacs --daemon >/dev/null 2>&1 &

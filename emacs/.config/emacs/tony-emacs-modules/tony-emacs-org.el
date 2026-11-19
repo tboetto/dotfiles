@@ -2,6 +2,7 @@
   (use-package
    org
    :ensure nil
+   :defer t
    :init
    (setopt org-confirm-babel-evaluate nil)
    (setq org-directory (expand-file-name "~/Documents/org/"))
@@ -12,6 +13,8 @@
    (setq org-startup-indented t)
    (add-to-list 'org-src-lang-modes '("typescript" . typescript-ts))
    )
+
+(add-to-list 'warning-suppress-types '(defvaralias))
 
 (use-package
   org-agenda
@@ -25,15 +28,15 @@
 
 (use-package org-wild-notifier
   :ensure t
-  :after org
+  :defer t
+  :init (run-with-idle-timer 5 nil #'org-wild-notifier-mode 1)
   :custom
   ;; dunst via libnotify on Linux, osascript-based notifications on macOS
   (alert-default-style (if (eq system-type 'darwin) 'osx-notifier 'libnotify))
   (org-wild-notifier-alert-time '(10 0))
   (org-wild-notifier-keyword-whitelist '("TODO" "NEXT"))
   ;; untimed (day-wide) tasks: remind at these times
-  (org-wild-notifier-day-wide-alert-times '("09:00" "14:30"))
-  :config (org-wild-notifier-mode 1))
+  (org-wild-notifier-day-wide-alert-times '("09:00" "14:30")))
 
 (use-package
  org-modern
@@ -51,6 +54,7 @@
 
 (use-package org-modern-indent
   :ensure (:host github :repo "jdtsmith/org-modern-indent")
+  :defer t
   :hook
   (org-mode . (lambda ()
                 (org-indent-mode 1)
@@ -199,7 +203,7 @@
       "Insert a space after a math fragment TAB has just stepped out of."
       (when (and (derived-mode-p 'org-mode)
                  (looking-back "\\\\[])]" (- (point) 2))
-                 (not (looking-at-p "[[:space:][:punct:]]")))
+                 (or (eolp) (not (looking-at-p "[[:space:][:punct:]]"))))
         (insert " ")
         (setq my/org-math--auto-space (point))
         (add-hook 'post-self-insert-hook #'my/org-math-drop-auto-space nil t)))
@@ -231,7 +235,8 @@
       org-outline-path-complete-in-steps nil)
 
 (use-package ob-racket
-  :ensure (:host github :repo "DEADB17/ob-racket"))
+  :ensure (:host github :repo "DEADB17/ob-racket")
+  :after org)
 
 (use-package
   ox-md

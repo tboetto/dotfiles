@@ -6,8 +6,20 @@
 (setq gc-cons-threshold 200000000)        ; 200mb
 (setq read-process-output-max (* 10 1024 1024)) ; 10mb
 
-(tool-bar-mode -1)
-;;(push '(tool-bar-lines . 0) default-frame-alist)
+(push '(menu-bar-lines . 0) default-frame-alist)
+(push '(tool-bar-lines . 0) default-frame-alist)
+(push '(vertical-scroll-bars) default-frame-alist)
+(setq menu-bar-mode nil
+      tool-bar-mode nil
+      scroll-bar-mode nil)
+(setq frame-inhibit-implied-resize t)
+
+(push '(background-color . "#282c34") initial-frame-alist)
+(push '(foreground-color . "#bbc2cf") initial-frame-alist)
+(push (cons (if (eq system-type 'darwin) 'alpha 'alpha-background) 90)
+      initial-frame-alist)
+(setq inhibit-startup-screen t
+      inhibit-startup-echo-area-message user-login-name)
 
 (add-to-list 'initial-frame-alist '(fullscreen . maximized))
 
