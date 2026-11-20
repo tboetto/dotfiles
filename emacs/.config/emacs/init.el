@@ -89,6 +89,11 @@
 (recentf-mode 1)
 (run-with-idle-timer 30 nil #'recentf-cleanup)
 (setq history-length 25)
+(with-eval-after-load 'savehist
+  (when (daemonp)
+    (setq savehist-file (expand-file-name "history-daemon" user-emacs-directory)))
+  (add-hook 'savehist-save-hook
+            (lambda () (setq command-history (seq-take command-history 100)))))
 (savehist-mode 1)
 (save-place-mode 1)
 

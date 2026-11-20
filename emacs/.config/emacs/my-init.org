@@ -286,11 +286,20 @@ Emacs backup (~file~~) and autosave files stay on because I like having them as 
 
 *** Enable history settings
 =recentf-mode= normally cleans the list when it is enabled, which checks every entry on disk while the first frame is up. The cleanup runs from an idle timer instead.
+
+=command-history= is unbounded and =history-length= does not cap it. Savehist reloads and deduplicates the whole saved list on every autosave, which grew into a multi-megabyte stall. The save hook trims it to a fixed number of entries before each write.
+
+A daemon and a standalone Emacs have no locking between them and each rewrite the whole savehist file from memory, so the daemon keeps its own file.
 #+begin_src emacs-lisp :tangle "init.el" :mkdirp yes
 (setq recentf-auto-cleanup 'never)
 (recentf-mode 1)
 (run-with-idle-timer 30 nil #'recentf-cleanup)
 (setq history-length 25)
+(with-eval-after-load 'savehist
+  (when (daemonp)
+    (setq savehist-file (expand-file-name "history-daemon" user-emacs-directory)))
+  (add-hook 'savehist-save-hook
+            (lambda () (setq command-history (seq-take command-history 100)))))
 (savehist-mode 1)
 (save-place-mode 1)
 #+end_src
