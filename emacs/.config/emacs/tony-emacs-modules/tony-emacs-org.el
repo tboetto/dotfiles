@@ -23,7 +23,8 @@
   :ensure nil
   :bind
   (("C-c A" . org-agenda))
-  :config (setq org-agenda-files (list org-directory)))
+  :config
+  (setq org-agenda-files (list (expand-file-name "tasks.org" org-directory))))
 
 ;; mode-line clock shows only today's clocked time (not all-time total)
 (setq org-clock-mode-line-total 'today)

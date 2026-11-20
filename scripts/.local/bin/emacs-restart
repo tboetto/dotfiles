@@ -1,0 +1,41 @@
+#!/bin/sh
+# Restart the Emacs daemon. Unsaved buffers and open sessions are lost.
+# On Linux the daemon's output goes to $XDG_STATE_HOME/emacs-daemon.log; the
+# previous run's log is kept as emacs-daemon.log.old.
+case "$(uname -s)" in
+	Darwin)
+		exec launchctl kickstart -k "gui/$(id -u)/com.user.emacs-daemon"
+		;;
+esac
+
+log_dir="${XDG_STATE_HOME:-$HOME/.local/state}"
+log="$log_dir/emacs-daemon.log"
+daemon_pattern='^emacs --(fg-)?daemon'
+
+timeout 5 emacsclient -e '(kill-emacs)' >/dev/null 2>&1
+
+i=0
+while pgrep -u "$(id -u)" -f "$daemon_pattern" >/dev/null && [ "$i" -lt 5 ]; do
+	sleep 1
+	i=$((i + 1))
+done
+if pgrep -u "$(id -u)" -f "$daemon_pattern" >/dev/null; then
+	echo "emacs-restart: daemon did not exit, killing it" >&2
+	pkill -KILL -u "$(id -u)" -f "$daemon_pattern"
+	sleep 1
+fi
+
+mkdir -p "$log_dir"
+[ -f "$log" ] && mv -f "$log" "$log.old"
+cd "$HOME" || exit 1
+setsid emacs --fg-daemon </dev/null >"$log" 2>&1 &
+
+i=0
+until timeout 2 emacsclient -e t >/dev/null 2>&1; do
+	if [ "$i" -ge 120 ]; then
+		echo "emacs-restart: daemon not answering after 60s, see $log" >&2
+		exit 1
+	fi
+	sleep 0.5
+	i=$((i + 1))
+done

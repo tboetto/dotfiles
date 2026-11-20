@@ -13,6 +13,7 @@
 (declare-function org-link-set-parameters "ol")
 (declare-function org-latex-export-to-pdf "ox-latex")
 (declare-function org-open-file "org")
+(declare-function org-yank-image-autogen-filename "org")
 (declare-function denote-retrieve-filename-identifier "denote")
 (declare-function server-edit "server")
 (declare-function laas-mode "laas")
@@ -403,5 +404,24 @@ Shell escape is on for this one export only."
          (append org-latex-packages-alist
                  (list '("" "svg") my/latex-math-macros))))
     (org-open-file (org-latex-export-to-pdf))))
+
+(defun my/inkscape--yank-image-name ()
+  "Read a file name base for a pasted image."
+  (let ((name (string-trim (read-string "Image name (empty for timestamp): "))))
+    (if (string-empty-p name)
+        (org-yank-image-autogen-filename)
+      (my/inkscape--slug name (my/inkscape--figure-dir)))))
+
+(defun my/inkscape--preview-yanked-image (fn &rest args)
+  "Call FN with ARGS, then preview the link it inserted."
+  (let ((beg (point)))
+    (apply fn args)
+    (org-link-preview-region nil t beg (point))))
+
+(setq org-yank-image-save-method #'my/inkscape--figure-dir
+      org-yank-image-file-name-function #'my/inkscape--yank-image-name)
+(with-eval-after-load 'org
+  (advice-add 'org--image-yank-media-handler :around
+              #'my/inkscape--preview-yanked-image))
 
 (provide 'tony-emacs-inkscape)

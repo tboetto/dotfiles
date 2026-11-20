@@ -1164,13 +1164,15 @@ The Org development branch aliases =org-format-latex-header= to =org-latex-previ
 #+end_src
 
 *** org agenda set up
+The agenda reads only =tasks.org=. Every agenda file has to be visited, with all the =org-mode= hooks, each time the agenda is built, so pointing it at the whole =org-directory= made it open every note and cheat sheet in there.
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-org.el" :mkdirp yes
   (use-package
     org-agenda
     :ensure nil
     :bind
     (("C-c A" . org-agenda))
-    :config (setq org-agenda-files (list org-directory)))
+    :config
+    (setq org-agenda-files (list (expand-file-name "tasks.org" org-directory))))
 #+end_src
 
 *** org clock set up
@@ -1759,6 +1761,7 @@ The figure template lives beside this file in =templates/inkscape-figure.svg= an
 (declare-function org-link-set-parameters "ol")
 (declare-function org-latex-export-to-pdf "ox-latex")
 (declare-function org-open-file "org")
+(declare-function org-yank-image-autogen-filename "org")
 (declare-function denote-retrieve-filename-identifier "denote")
 (declare-function server-edit "server")
 (declare-function laas-mode "laas")
@@ -2570,6 +2573,31 @@ Things to know:
 - A saved style or object is applied the moment the letters typed after =s= or =a= match exactly one name. With one style called =glass=, =s g= is enough, and typing the rest of the word runs those letters as normal keys.
 - Pasted text and objects land at the mouse pointer.
 - The manager starts a listener for every Inkscape window, including menus and tooltips; the "New window!" lines in its log are that and are harmless.
+
+*** pasted images
+An image pasted with =M-x yank-media= goes into the same per-note folder as the Inkscape figures and is inserted as a plain =[[file:...]]= link, so it previews inline like a figure. The name prompt is turned into a file name the same way a figure title is; an empty answer uses a timestamp.
+
+The link is previewed as soon as it is inserted by advising Org's image handler, =org--image-yank-media-handler=. It is an internal function: if pasted images stop previewing after an Org upgrade, check that it still exists under that name.
+#+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-inkscape.el" :mkdirp yes
+(defun my/inkscape--yank-image-name ()
+  "Read a file name base for a pasted image."
+  (let ((name (string-trim (read-string "Image name (empty for timestamp): "))))
+    (if (string-empty-p name)
+        (org-yank-image-autogen-filename)
+      (my/inkscape--slug name (my/inkscape--figure-dir)))))
+
+(defun my/inkscape--preview-yanked-image (fn &rest args)
+  "Call FN with ARGS, then preview the link it inserted."
+  (let ((beg (point)))
+    (apply fn args)
+    (org-link-preview-region nil t beg (point))))
+
+(setq org-yank-image-save-method #'my/inkscape--figure-dir
+      org-yank-image-file-name-function #'my/inkscape--yank-image-name)
+(with-eval-after-load 'org
+  (advice-add 'org--image-yank-media-handler :around
+              #'my/inkscape--preview-yanked-image))
+#+end_src
 
 *** provide module
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-inkscape.el" :mkdirp yes
@@ -3951,12 +3979,15 @@ is not repeated here.
 ** ~linter.el~
 
 *** flycheck use and config
+Flycheck stays off in the agenda buffer, which has no checker and would otherwise print a "no syntax checker" message every time the agenda opens.
 #+begin_src emacs-lisp :tangle "tony-emacs-modules/tony-emacs-linter.el" :mkdirp yes
 ;;; tony-emacs-linter.el --- Flycheck and editorconfig  -*- lexical-binding: t; -*-
 (use-package
  flycheck
  :ensure t
- :init (global-flycheck-mode)
+ :init
+ (setq flycheck-global-modes '(not org-agenda-mode))
+ (global-flycheck-mode)
  :bind
  (:map
   flycheck-mode-map

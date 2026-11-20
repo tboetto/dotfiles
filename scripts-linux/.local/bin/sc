@@ -1,0 +1,3 @@
+#!/bin/sh
+# Select a screen area and copy it to the clipboard as a PNG.
+maim -s | xclip -sel clip -t image/png

@@ -1,0 +1,5 @@
+#!/bin/sh
+# Open a GUI Emacs frame through the daemon, starting the daemon if it is not running.
+# Usage: e [file...]
+emacsclient -c -n "$@" 2>/dev/null && exit 0
+emacs-restart && exec emacsclient -c -n "$@"

@@ -2,7 +2,9 @@
 (use-package
  flycheck
  :ensure t
- :init (global-flycheck-mode)
+ :init
+ (setq flycheck-global-modes '(not org-agenda-mode))
+ (global-flycheck-mode)
  :bind
  (:map
   flycheck-mode-map
